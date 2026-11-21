@@ -164,6 +164,10 @@ fun QrApp(env: Env, start: Screen = Screen.Home, startNote: String? = null) {
     if (about) AlertDialog(
         onDismissRequest = { about = false },
         confirmButton = { TextButton(onClick = { about = false }) { Text(tr("Close")) } },
+        dismissButton = {
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            TextButton(onClick = { Actions.open(ctx, "https://apps.jurisgames.com/privacy/") }, modifier = Modifier.testTag("privacy")) { Text(tr("Privacy")) }
+        },
         title = { Text(tr("About QR")) },
         text = {
             Text(tr("Version {v}. Free and open source (Apache-2.0), no ads, no account. Codes are read with ZXing. Your history stays on this phone. For many more barcode formats, see Binary Eye.", "v" to env.version), modifier = Modifier.testTag("aboutText"))

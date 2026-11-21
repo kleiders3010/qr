@@ -28,7 +28,7 @@ val ES: Map<String, String> = mapOf(
     "Send feedback" to "Enviar comentarios",
     "About" to "Acerca de",
     "About QR" to "Acerca de QR",
-    "Close" to "Cerrar",
+    "Close" to "Cerrar", "Privacy" to "Privacidad",
     "Version {v}. Free and open source (Apache-2.0), no ads, no account. Codes are read with ZXing. Your history stays on this phone. For many more barcode formats, see Binary Eye." to
         "Versión {v}. Gratis y de código abierto (Apache-2.0), sin anuncios, sin cuenta. Los códigos se leen con ZXing. Tu historial queda en este teléfono. Para muchos más tipos de códigos de barras, mirá Binary Eye.",
     "Scan a code" to "Escanear un código",
