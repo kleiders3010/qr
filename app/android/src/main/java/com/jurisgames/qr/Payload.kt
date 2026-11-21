@@ -56,8 +56,12 @@ sealed class Payload {
                 is GeoParsedResult -> Geo(raw, p.latitude, p.longitude, s(p.query))
                 is ProductParsedResult -> Product(raw, s(p.normalizedProductID).ifEmpty { raw })
                 is ISBNParsedResult -> Product(raw, s(p.isbn))
-                else -> Text(raw)
+                // ZXing drops links it finds suspicious (text before an @, odd characters) to plain text; those are the very
+                // links whose warnings matter, so anything shaped like scheme://... goes through our LinkCheck as a link.
+                else -> if (URL_SHAPE.matches(raw.trim())) Link(raw, raw.trim()) else Text(raw)
             }
         }
+
+        private val URL_SHAPE = Regex("""^[a-zA-Z][a-zA-Z0-9+.-]*://\S+$""")
     }
 }

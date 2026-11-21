@@ -91,6 +91,16 @@ class CoreTest {
         }
     }
 
+    /** pinned: a deceptive link is shown as a link with its warnings, never as plain text (ZXing alone drops it to text). */
+    @Test fun deceptiveLinksStillGetTheLinkCheck() {
+        val raw = "http://mybank.com-secure-login@203.0.113.7/verify"
+        val p = Payload.of(raw)
+        assertTrue("$p", p is Payload.Link)
+        val w = LinkCheck.check((p as Payload.Link).url).warnings
+        assertTrue("$w", LinkCheck.USERINFO in w && LinkCheck.IP in w && LinkCheck.HTTP in w)
+        assertTrue(Payload.of("just some words") is Payload.Text)
+    }
+
     @Test fun colors() {
         assertNull(Codes.colorProblem(0xFF000000.toInt(), 0xFFFFFFFF.toInt()))
         assertNotNull(Codes.colorProblem(0xFFFFFFFF.toInt(), 0xFF000000.toInt()))

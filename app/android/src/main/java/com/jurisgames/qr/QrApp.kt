@@ -234,7 +234,9 @@ private fun ResultScreen(text: String, format: BarcodeFormat, note: (String) -> 
                 Text(p.url, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("fullUrl"))
                 for (w in r.warnings) Text("⚠ " + LinkCheck.shown(w, r), color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("warning"))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (r.opens) Button(onClick = { failed(Actions.open(ctx, p.url)) }, modifier = Modifier.testTag("open")) { Text(tr("Open")) }
+                    // With warnings, Open is not the button the eye goes to first.
+                    if (r.opens && r.warnings.isEmpty()) Button(onClick = { failed(Actions.open(ctx, p.url)) }, modifier = Modifier.testTag("open")) { Text(tr("Open")) }
+                    else if (r.opens) OutlinedButton(onClick = { failed(Actions.open(ctx, p.url)) }, modifier = Modifier.testTag("open")) { Text(tr("Open")) }
                     OutlinedButton(onClick = { Actions.copy(ctx, "link", p.url); note(tr("Copied")) }, modifier = Modifier.testTag("copy")) { Text(tr("Copy")) }
                     OutlinedButton(onClick = { failed(Actions.shareText(ctx, p.url)) }, modifier = Modifier.testTag("share")) { Text(tr("Share")) }
                 }
