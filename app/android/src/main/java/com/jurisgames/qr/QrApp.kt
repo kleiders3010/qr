@@ -389,9 +389,17 @@ private fun MakeScreen(env: Env, note: (String) -> Unit, onMade: () -> Unit) {
                 val name = "qr-" + System.currentTimeMillis() / 1000
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(enabled = reads, onClick = {
-                        val ok = Actions.savePicture(ctx, image, name)
-                        if (ok) { env.history.add(content, kind, "QR_CODE", made = true); onMade() }
-                        note(if (ok) tr("Saved to Pictures/QR") else tr("Couldn't save it"))
+                        if (android.os.Build.VERSION.SDK_INT >= 29) {
+                            val ok = Actions.savePicture(ctx, image, name)
+                            if (ok) { env.history.add(content, kind, "QR_CODE", made = true); onMade() }
+                            note(if (ok) tr("Saved to Pictures/QR") else tr("Couldn't save it"))
+                        } else {
+                            // Android 8-9: Pictures needs a storage permission we don't ask for; the system's save dialog doesn't.
+                            env.saveFile("$name.png", "image/png", Actions.png(image)) { ok ->
+                                if (ok) { env.history.add(content, kind, "QR_CODE", made = true); onMade() }
+                                note(if (ok) tr("Saved") else tr("Couldn't save it"))
+                            }
+                        }
                     }, modifier = Modifier.testTag("savePng")) { Text(tr("Save picture")) }
                     OutlinedButton(enabled = reads, onClick = {
                         if (Actions.sharePicture(ctx, image, name)) { env.history.add(content, kind, "QR_CODE", made = true); onMade() }

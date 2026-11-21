@@ -108,7 +108,7 @@ object Actions {
 
     fun png(b: Bitmap): ByteArray = java.io.ByteArrayOutputStream().also { b.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
 
-    /** Into Pictures/QR (no storage permission on Android 10+). */
+    /** Into Pictures/QR. Android 10+ only (no storage permission there); older ones use the save dialog. */
     fun savePicture(ctx: Context, b: Bitmap, name: String): Boolean = runCatching {
         val v = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, "$name.png")
