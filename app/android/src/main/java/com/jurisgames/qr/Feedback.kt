@@ -35,6 +35,9 @@ object Feedback {
     }
 
     /** The report as JSON (the endpoint's format), pretty enough to read in "See what's sent". */
+    /** The technical details QR sends: whether history is on and how many codes it holds, never what they say (rule 74, Q2-8). */
+    fun details(h: History): List<String> = listOf("history: " + (if (h.enabled) "on" else "off") + ", " + h.all().size + " codes")
+
     fun json(kind: String, message: String, email: String, version: String, details: List<String>?): String = buildString {
         append("{\n  \"app\": \"qr\",\n  \"kind\": ${str(kind)},\n  \"message\": ${str(message.trim())},\n")
         append("  \"lang\": ${str(java.util.Locale.getDefault().toLanguageTag())},\n  \"version\": ${str(version)}")

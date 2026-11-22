@@ -66,7 +66,7 @@ object Actions {
     fun addContact(ctx: Context, c: Payload.Contact): Boolean {
         val i = Intent(ContactsContract.Intents.Insert.ACTION).setType(ContactsContract.RawContacts.CONTENT_TYPE)
             .putExtra(ContactsContract.Intents.Insert.NAME, c.name)
-        c.phones.firstOrNull()?.let { i.putExtra(ContactsContract.Intents.Insert.PHONE, it) }
+        c.safePhones.firstOrNull()?.let { i.putExtra(ContactsContract.Intents.Insert.PHONE, it) } // never a phone command (Q2-2)
         c.emails.firstOrNull()?.let { i.putExtra(ContactsContract.Intents.Insert.EMAIL, it) }
         if (c.org.isNotEmpty()) i.putExtra(ContactsContract.Intents.Insert.COMPANY, c.org)
         if (c.address.isNotEmpty()) i.putExtra(ContactsContract.Intents.Insert.POSTAL, c.address)

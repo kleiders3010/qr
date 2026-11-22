@@ -1,5 +1,6 @@
 package com.jurisgames.qr
 
+import androidx.compose.runtime.produceState
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -106,7 +107,7 @@ fun QrApp(env: Env, start: Screen = Screen.Home, startNote: String? = null) {
     LaunchedEffect(startNote) { startNote?.let(::note) }
 
     fun found(text: String, format: BarcodeFormat) {
-        env.history.add(text, Payload.of(text, format).kind, format.name, made = false)
+        if (!env.history.add(text, Payload.of(text, format).kind, format.name, made = false)) note(tr("Couldn't save it to the history: the phone may be full."))
         historyVersion++
         screen = Screen.Result(text, format)
     }
@@ -227,6 +228,22 @@ private fun ResultScreen(text: String, format: BarcodeFormat, note: (String) -> 
         @Composable fun line(label: String, value: String) {
             if (value.isNotBlank()) Column { Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant); Text(Visible.show(value), style = MaterialTheme.typography.bodyLarge) }
         }
+        // Q2-3: a link inside a card, event or message gets the same check as a scanned link (it would sit one tap
+        // away in Contacts or the calendar, never checked): where it really goes, in bold, and its warnings.
+        @Composable fun linksIn(vararg texts: String) {
+            for (url in Content.linksIn(*texts)) {
+                val r = LinkCheck.check(url)
+                Column(Modifier.testTag("innerLink")) {
+                    Text(tr("A link in it goes to"), style = MaterialTheme.typography.bodySmall)
+                    Text(if (r.opens) r.site.ifEmpty { r.host } else Visible.show(url), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    for (w in r.warnings) Text("⚠ " + LinkCheck.shown(w, r), color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("warning"))
+                }
+            }
+        }
+        // Q2-3: an email address with lookalike letters in its domain gets the letters warnings.
+        @Composable fun addressCheck(addresses: List<String>) {
+            for (w in Content.addressWarnings(addresses)) Text("⚠ " + tr(w), color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("warning"))
+        }
         when (p) {
             is Payload.Link -> {
                 val r = remember(p.url) { LinkCheck.check(p.url) }
@@ -261,8 +278,14 @@ private fun ResultScreen(text: String, format: BarcodeFormat, note: (String) -> 
                 }
             }
             is Payload.Contact -> {
-                line(tr("Name"), p.name); line(tr("Phone"), p.phones.joinToString(", ")); line(tr("Email"), p.emails.joinToString(", "))
+                line(tr("Name"), p.name); line(tr("Phone"), p.safePhones.joinToString(", ")); line(tr("Email"), p.emails.joinToString(", "))
+                // Q2-2: a "number" that is a phone command is shown apart, with the warning, and never saved into Contacts.
+                if (p.commandPhones.isNotEmpty()) {
+                    line(tr("Phone command, not a number"), p.commandPhones.joinToString(", "))
+                    Text("⚠ " + tr("This card has a phone code that changes phone settings (some send all your calls to another number). It is left out of the contact."), color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("warning"))
+                }
                 line(tr("Company"), p.org); line(tr("Address"), p.address); line(tr("Website"), p.url); line(tr("Note"), p.note)
+                linksIn(p.url, p.note); addressCheck(p.emails)
                 Button(onClick = { failed(Actions.addContact(ctx, p)) }, modifier = Modifier.testTag("addContact")) { Text(tr("Add to contacts")) }
             }
             is Payload.Event -> {
@@ -271,6 +294,7 @@ private fun ResultScreen(text: String, format: BarcodeFormat, note: (String) -> 
                 line(tr("Starts"), if (p.startMs > 0) df.format(Date(p.startMs)) else "")
                 line(tr("Ends"), if (p.endMs > p.startMs) df.format(Date(p.endMs)) else "")
                 line(tr("Where"), p.location); line(tr("Details"), p.description)
+                linksIn(p.location, p.description)
                 Button(onClick = { failed(Actions.addEvent(ctx, p)) }, modifier = Modifier.testTag("addEvent")) { Text(tr("Add to calendar")) }
             }
             is Payload.Phone -> {
@@ -286,10 +310,12 @@ private fun ResultScreen(text: String, format: BarcodeFormat, note: (String) -> 
             }
             is Payload.Sms -> {
                 line(tr("To"), p.number); line(tr("Message"), p.body)
+                linksIn(p.body)
                 Button(onClick = { failed(Actions.sms(ctx, p)) }, modifier = Modifier.testTag("sms")) { Text(tr("Write the message")) }
             }
             is Payload.Email -> {
                 line(tr("To"), p.to); line(tr("Subject"), p.subject); line(tr("Message"), p.body)
+                addressCheck(p.to.split(',').map { it.trim() }); linksIn(p.subject, p.body)
                 if (Content.oddAddress(p.to)) Text("⚠ " + tr("The address has characters (? & # = %) that aren't part of a normal address. It is passed on as one odd address, nothing more."), color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("warning"))
                 Button(onClick = { failed(Actions.email(ctx, p)) }, modifier = Modifier.testTag("email")) { Text(tr("Write the email")) }
             }
@@ -348,10 +374,19 @@ private fun MakeScreen(env: Env, note: (String) -> Unit, onMade: () -> Unit) {
     val bytes = content.toByteArray().size
     val limit = if (logo != null) Codes.MAX_BYTES_H else Codes.MAX_BYTES
     val colorProblem = Codes.colorProblem(fg, bg)
-    val image: Bitmap? = remember(content, fg, bg, logo) {
-        if (content.isEmpty() || bytes > limit) null else runCatching { Actions.bitmap(content, fg, bg, logo) }.getOrNull()
+    // Q2-5: the preview is built and read back off the main thread, a moment after typing stops, at a small scale
+    // (6 px a square reads back fine) and inside a catch; the saved or shared picture is made full size on the tap.
+    val preview by produceState<Pair<Bitmap?, Boolean>?>(null, content, fg, bg, logo) {
+        value = null
+        if (content.isEmpty() || bytes > limit) return@produceState
+        kotlinx.coroutines.delay(250)
+        value = withContext(Dispatchers.Default) {
+            runCatching { Actions.bitmap(content, fg, bg, logo, px = 6) }.getOrNull()?.let { b -> b to runCatching { Actions.readsBack(b, content) }.getOrDefault(false) } ?: (null to false)
+        }
     }
-    val reads = remember(image) { image != null && Actions.readsBack(image, content) }
+    val image: Bitmap? = preview?.first
+    val reads = preview?.second == true
+    fun full(): Bitmap? = runCatching { Actions.bitmap(content, fg, bg, logo) }.getOrNull()
     val pick = { env.pickPicture { b -> if (b != null) logo = b } }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -369,7 +404,7 @@ private fun MakeScreen(env: Env, note: (String) -> Unit, onMade: () -> Unit) {
             "text" -> field("text", tr("Text"), lines = 4)
             "wifi" -> {
                 field("ssid", tr("Network name"))
-                field("password", tr("Password (empty for an open network)"), KeyboardType.Password)
+                field("password", tr("Password (empty for an open network)"), KeyboardType.Password, secret = true) // hidden here too (Q2-4, rule 78)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     for (s in listOf("WPA", "WEP")) FilterChip(selected = security == s, onClick = { security = s }, label = { Text(if (s == "WPA") "WPA/WPA2/WPA3" else s) })
                 }
@@ -407,19 +442,19 @@ private fun MakeScreen(env: Env, note: (String) -> Unit, onMade: () -> Unit) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(enabled = reads, onClick = {
                         if (android.os.Build.VERSION.SDK_INT >= 29) {
-                            val ok = Actions.savePicture(ctx, image, name)
+                            val ok = full()?.let { Actions.savePicture(ctx, it, name) } ?: false
                             if (ok) { env.history.add(content, kind, "QR_CODE", made = true); onMade() }
                             note(if (ok) tr("Saved to Pictures/QR") else tr("Couldn't save it"))
                         } else {
                             // Android 8-9: Pictures needs a storage permission we don't ask for; the system's save dialog doesn't.
-                            env.saveFile("$name.png", "image/png", Actions.png(image)) { ok ->
+                            env.saveFile("$name.png", "image/png", Actions.png(full() ?: image)) { ok ->
                                 if (ok) { env.history.add(content, kind, "QR_CODE", made = true); onMade() }
                                 note(if (ok) tr("Saved") else tr("Couldn't save it"))
                             }
                         }
                     }, modifier = Modifier.testTag("savePng")) { Text(tr("Save picture")) }
                     OutlinedButton(enabled = reads, onClick = {
-                        if (Actions.sharePicture(ctx, image, name)) { env.history.add(content, kind, "QR_CODE", made = true); onMade() }
+                        if (full()?.let { Actions.sharePicture(ctx, it, name) } == true) { env.history.add(content, kind, "QR_CODE", made = true); onMade() }
                     }, modifier = Modifier.testTag("sharePng")) { Text(tr("Share")) }
                     OutlinedButton(enabled = reads, onClick = {
                         val svg = Codes.svg(Codes.matrix(content, logo != null), fg, bg, logo?.let { Actions.png(it) })
@@ -505,7 +540,7 @@ private fun FeedbackDialog(env: Env, onSent: () -> Unit, onClose: () -> Unit) {
     var preview by remember { mutableStateOf(false) }
     var sending by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
-    val details = remember { listOf("history: " + (if (env.history.enabled) "on" else "off") + ", " + env.history.all().size + " codes") }
+    val details = remember { Feedback.details(env.history) }
     val body = Feedback.json(kind, message, email, env.version, if (include) details else null)
     val scope = rememberCoroutineScope()
     AlertDialog(

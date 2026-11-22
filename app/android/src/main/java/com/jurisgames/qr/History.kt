@@ -11,6 +11,12 @@ import java.util.Locale
  * Can be turned off (then nothing new is kept) and cleared. At most [MAX] entries: the oldest go first.
  */
 class History(private val file: File, private val settings: File) {
+    /** One History per process (Q2-6): two activities (a rotation while a picture is read) must not overwrite each other. */
+    object Shared {
+        @Volatile private var h: History? = null
+        @Synchronized fun of(filesDir: File): History = h ?: History(File(filesDir, "history"), File(filesDir, "history-setting")).also { h = it }
+    }
+
     data class Entry(val time: Long, val made: Boolean, val kind: String, val format: String, val text: String)
 
     companion object {
@@ -47,14 +53,19 @@ class History(private val file: File, private val settings: File) {
         cache = newestFirst
     }
 
-    /** Keeps [text] (when history is on); the same text again moves to the top instead of being listed twice. */
-    fun add(text: String, kind: String, format: String, made: Boolean, now: Long = System.currentTimeMillis()) {
-        if (!enabled || text.isEmpty()) return
+    /**
+     * Keeps [text] (when history is on); the same text again moves to the top instead of being listed twice.
+     * False when it couldn't be written (a full phone): the scan itself still shows (Q2-6, rule 82).
+     */
+    @Synchronized
+    fun add(text: String, kind: String, format: String, made: Boolean, now: Long = System.currentTimeMillis()): Boolean = runCatching {
+        if (!enabled || text.isEmpty()) return true
         val rest = all().filterNot { it.text == text && it.made == made }
         save((listOf(Entry(now, made, kind, format, text)) + rest).take(MAX))
-    }
+    }.isSuccess
 
-    fun remove(e: Entry) = save(all().filterNot { it == e })
+    @Synchronized
+    fun remove(e: Entry): Boolean = runCatching { save(all().filterNot { it == e }) }.isSuccess
 
     fun clear() {
         file.delete()
@@ -70,7 +81,8 @@ class History(private val file: File, private val settings: File) {
     /** A spreadsheet cell: quoted, and text that starts like a formula gets a ' in front (APP-RULES safety 15). */
     private fun cell(raw: String): String {
         // Hidden control characters go; a formula start counts after leading spaces too (APP-RULES 70).
-        val s = raw.filter { it == '\n' || it == '\t' || it == '\r' || !it.isISOControl() }
+        // Q2-7: zero-width, byte-order and direction marks go too, so none can hide a formula start.
+        val s = buildString { raw.codePoints().forEach { cp -> if (!Visible.isHidden(cp)) appendCodePoint(cp) } }
         val lead = s.trimStart()
         val safe = if (lead.isNotEmpty() && lead[0] in "=+-@" && lead.toDoubleOrNull() == null) "'$s" else s
         return "\"" + safe.replace("\"", "\"\"") + "\""

@@ -81,6 +81,14 @@ val ES: Map<String, String> = mapOf(
     "This is a short link: where it really leads is only shown after opening." to "Es un enlace acortado: adónde lleva de verdad solo se ve al abrirlo.",
     "This link is unusually long." to "Este enlace es inusualmente largo.",
     "It uses an unusual port ({port})." to "Usa un puerto poco común ({port}).",
+    "A link in it goes to" to "Un enlace de adentro va a",
+    "Couldn't save it to the history: the phone may be full." to "No se pudo guardar en el historial: el teléfono puede estar lleno.",
+    "The address uses letters outside a–z. Check it carefully: it may imitate another address." to
+        "La dirección usa letras fuera de a–z. Revisala bien: puede imitar otra dirección.",
+    "This card has a phone code that changes phone settings (some send all your calls to another number). It is left out of the contact." to
+        "Esta tarjeta tiene un código que cambia ajustes del teléfono (algunos desvían todas tus llamadas a otro número). Queda fuera del contacto.",
+    "The real site is {site}. The words before it are only part of its address and can say anything." to
+        "El sitio real es {site}. Las palabras de antes son solo parte de su dirección y pueden decir cualquier cosa.",
     // make
     "Web address" to "Dirección web", "Network name" to "Nombre de la red",
     "Password (empty for an open network)" to "Contraseña (vacía para una red abierta)", "Hidden network" to "Red oculta",

@@ -16,7 +16,8 @@ object LinkCheck {
         val url: String,
         /** The host as people read it (Unicode), or "" when there is none. */
         val host: String,
-        /** What is shown in bold: the whole host (a guess at "the site" misleads on shared hosting). */
+        /** What is shown in bold: the registrable domain from the Public Suffix List (private section included, so
+         *  shared hosting like github.io counts per user); the whole host for number addresses (Q2-1). */
         val site: String,
         val opens: Boolean,
         /** English templates (translated by [shown]); {host}, {port}, {scheme} and {letters} are filled in there. */
@@ -49,9 +50,10 @@ object LinkCheck {
     const val SHORT = "This is a short link: where it really leads is only shown after opening."
     const val LONG = "This link is unusually long."
     const val PORT = "It uses an unusual port ({port})."
+    const val DECEPTIVE = "The real site is {site}. The words before it are only part of its address and can say anything."
 
     /** Every warning text, for the translation test. */
-    val ALL = listOf(NOT_WEB, OTHER_SCHEME, BROKEN, HTTP, USERINFO, IP, PUNYCODE, MIXED, SHORT, LONG, PORT, Visible.WARNING)
+    val ALL = listOf(NOT_WEB, OTHER_SCHEME, BROKEN, HTTP, USERINFO, IP, PUNYCODE, MIXED, SHORT, LONG, PORT, DECEPTIVE, Visible.WARNING)
 
     fun check(url: String): Report {
         val trimmed = url.trim()
@@ -106,12 +108,23 @@ object LinkCheck {
         if (trimmed.length > 2000) warnings += LONG
         if (strict.port != -1 && strict.port != 443 && strict.port != 80) warnings += PORT
         if (Visible.has(trimmed)) warnings += Visible.WARNING
-        return Report(trimmed, unicode, unicode, true, warnings, scheme, strict.port, letters, target, host)
+        // Q2-1: the trusted-looking start of a host ("paypal.com.account-verify.evil.example") is not the site.
+        var site = unicode
+        if (!host.startsWith("[") && !isNumber(host)) {
+            val reg = PublicSuffix.registrable(host)
+            if (reg != null) {
+                site = runCatching { IDN.toUnicode(reg, IDN.ALLOW_UNASSIGNED) }.getOrDefault(reg)
+                val before = host.removeSuffix(reg).trimEnd('.').split('.').filter { it.isNotEmpty() }
+                // "paypal.com.account-verify": a suffix like "com" inside the words in front reads as a whole address
+                if (before.size > 3 || before.drop(1).any { PublicSuffix.isSuffixLabel(it) }) warnings += DECEPTIVE
+            }
+        }
+        return Report(trimmed, unicode, site, true, warnings, scheme, strict.port, letters, target, host)
     }
 
     /** A warning in the app's language, with its values filled in. */
     fun shown(w: String, r: Report): String =
-        tr(w, "host" to r.host, "port" to r.port, "scheme" to r.scheme, "letters" to r.letters)
+        tr(w, "host" to r.host, "port" to r.port, "scheme" to r.scheme, "letters" to r.letters, "site" to r.site)
 
     /**
      * A number address in any notation browsers accept: IPv6 in brackets, or a last label that is a number

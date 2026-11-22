@@ -74,7 +74,9 @@ class CoreTest {
     @Test fun linkCheckShowsTheRealPlace() {
         val ok = LinkCheck.check("https://www.mercadolibre.com.ar/x")
         assertTrue(ok.opens)
-        assertEquals("www.mercadolibre.com.ar", ok.site) // pinned: safety round 6 Q6, the whole host is shown in bold
+        // pinned: safety audit pass 2 Q2-1 (replaces round 6 Q6): the registrable domain (Public Suffix List) in bold
+        assertEquals("mercadolibre.com.ar", ok.site)
+        assertEquals("www.mercadolibre.com.ar", ok.host)
         assertTrue(ok.warnings.isEmpty())
 
         val at = LinkCheck.check("https://www.bank.com@evil.example/login")
@@ -121,6 +123,13 @@ class CoreTest {
         // pinned: Q6 shared hosting shows the whole host; QR redirectors are short links
         assertEquals("paypal-login.github.io", LinkCheck.check("https://paypal-login.github.io/").site)
         for (u in listOf("https://linktr.ee/x", "https://qr.link/x", "https://www.bit.ly/x")) warned(u, LinkCheck.SHORT)
+        // pinned: Q2-1 a trusted name at the start of someone else's address
+        for (u in listOf("https://paypal.com.account-verify.evil.example/login", "https://www.mercadopago.com.ar.secure-login-update.example.net/", "https://a.b.c.d.evil.example/"))
+            warned(u, LinkCheck.DECEPTIVE)
+        assertEquals("evil.example", LinkCheck.check("https://paypal.com.account-verify.evil.example/login").site)
+        assertEquals("example.net", LinkCheck.check("https://www.mercadopago.com.ar.secure-login-update.example.net/").site)
+        for (u in listOf("https://mail.google.com/", "https://www.mercadolibre.com.ar/", "https://docs.example.co.uk/x", "https://paypal-login.github.io/"))
+            assertFalse(u, LinkCheck.DECEPTIVE in LinkCheck.check(u).warnings)
         // pinned: Q15 hidden and direction-changing characters
         warned("https://evil.example/‮moc.elgoog//:sptth", Visible.WARNING)
         warned("https://example.com/a​b", Visible.WARNING)
@@ -130,6 +139,66 @@ class CoreTest {
         // Clean names stay clean.
         for (u in listOf("https://example.com/", "https://sub.example.co.uk/a?b=c#d", "http://localhost:80/"))
             assertTrue(u, LinkCheck.check(u).warnings.none { it == LinkCheck.PUNYCODE || it == LinkCheck.IP || it == LinkCheck.USERINFO || it == LinkCheck.PORT })
+    }
+
+    // pinned: safety audit pass 2 Q2-2, a phone command never passes as a number, in any form or kind
+    @Test fun phoneCommandsInEveryForm() {
+        for (n in listOf("**21*5491100000000#", "%2A%2A21%2A5491100000000%23", "＊＊21＊5491100000000＃", "*#06#"))
+            assertTrue(n, Payload.isPhoneCommand(n))
+        for (n in listOf("+54 9 11 0000-0000", "1100000000", "(011) 4000 0000"))
+            assertFalse(n, Payload.isPhoneCommand(n))
+        val tel = Payload.of("tel:%2A%2A21%2A5491100000000%23")
+        assertTrue(tel.toString(), tel is Payload.Phone && tel.isCommand)
+        for (card in listOf("BEGIN:VCARD\nVERSION:3.0\nFN:Banco Soporte\nTEL:**21*5491100000000#\nTEL:+541140000000\nEND:VCARD", "MECARD:N:Banco;TEL:**21*5491100000000#;TEL:+541140000000;;")) {
+            val c = Payload.of(card)
+            assertTrue(c.toString(), c is Payload.Contact)
+            c as Payload.Contact
+            assertEquals(listOf("**21*5491100000000#"), c.commandPhones)
+            assertTrue(c.safePhones.none { Payload.isPhoneCommand(it) } && c.safePhones.isNotEmpty())
+        }
+    }
+
+    // pinned: safety audit pass 2 Q2-3, links inside other kinds and lookalike email domains are checked too
+    @Test fun linksInsideOtherKindsAreChecked() {
+        val ev = Payload.of("BEGIN:VEVENT\nSUMMARY:Bank appointment\nDTSTART:20261201T100000Z\nLOCATION:https://paypal.com.account-verify.evil.example/\nDESCRIPTION:See www.evil.example/login.\nEND:VEVENT")
+        assertTrue(ev.toString(), ev is Payload.Event)
+        ev as Payload.Event
+        val links = Content.linksIn(ev.location, ev.description)
+        assertEquals(2, links.size)
+        assertTrue(links.toString(), LinkCheck.DECEPTIVE in LinkCheck.check(links[0]).warnings)
+        assertEquals("evil.example", LinkCheck.check(links[1]).site)
+        assertTrue(Content.addressWarnings(listOf("support@pаypal.com")).isNotEmpty()) // Cyrillic а
+        assertTrue(Content.addressWarnings(listOf("support@paypal.com", "ana@example.co.uk")).isEmpty())
+    }
+
+    // pinned: safety audit pass 2 Q2-4, a Wi-Fi password never shows in a list row, whatever case the code uses
+    @Test fun wifiPasswordsStayOutOfListsInAnyCase() {
+        val lower = Payload.of("wifi:T:WPA;S:Home;P:secret123;;")
+        assertTrue(lower.toString(), lower is Payload.Wifi)
+        for (raw in listOf("wifi:T:WPA;S:Home;P:secret123;;", "wifi:t:wpa;s:Home;p:secret123;;", "WIFI:T:WPA;S:Home;P:secret123"))
+            assertFalse(raw, Payload.of(raw).summary().contains("secret123"))
+    }
+
+    // pinned: rule 74 / Q2-8, feedback's technical details never carry what a code says
+    @Test fun feedbackDetailsNeverHoldCodeText() {
+        val dir = java.nio.file.Files.createTempDirectory("qr-fb").toFile()
+        val h = History(java.io.File(dir, "history"), java.io.File(dir, "history-setting"))
+        h.add("WIFI:T:WPA;S:Home;P:topsecret99;;", "wifi", "QR_CODE", made = false)
+        h.add("https://private.example/my-account", "link", "QR_CODE", made = false)
+        val json = Feedback.json("problem", "hi", "", "1.0", Feedback.details(h))
+        assertTrue(json, json.contains("2 codes"))
+        assertFalse(json, json.contains("topsecret99") || json.contains("private.example") || json.contains("Home"))
+    }
+
+    // pinned: Q2-7, an invisible character can't hide a formula start in the CSV
+    @Test fun csvDropsInvisibleCharactersBeforeFormulas() {
+        val dir = java.nio.file.Files.createTempDirectory("qr-csv").toFile()
+        val h = History(java.io.File(dir, "history"), java.io.File(dir, "history-setting"))
+        h.add("﻿=HYPERLINK(\"https://evil.example\")", "text", "QR_CODE", made = false)
+        h.add("​+1+1", "text", "QR_CODE", made = false)
+        val csv = h.csv()
+        assertFalse(csv, csv.contains("﻿") || csv.contains("​"))
+        assertTrue(csv, csv.contains("\"'=HYPERLINK") && csv.contains("\"'+1+1\""))
     }
 
     @Test fun hiddenCharactersAreShown() {

@@ -30,7 +30,11 @@ class MainActivity : ComponentActivity() {
         onScanned?.invoke(text?.let { it to format })
         if (r.data?.getBooleanExtra("denied", false) == true) start.value = Screen.Home to tr("Scanning needs the camera. You can allow it in the phone's settings, or read a code from a picture.")
     }
-    private val picker = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> onPicture?.invoke(uri?.let(::load)) }
+    // Q2-5: a picked picture is decoded off the main thread (a huge one would freeze the app).
+    private val picker = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        val cb = onPicture
+        if (uri == null) cb?.invoke(null) else thread(name = "picked-picture") { val b = load(uri); runOnUiThread { if (!isDestroyed) cb?.invoke(b) } }
+    }
     private val saver = registerForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
         val (bytes, done) = pendingSave ?: return@registerForActivityResult
         pendingSave = null
@@ -59,11 +63,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        history = History(File(filesDir, "history"), File(filesDir, "history-setting"))
+        history = History.Shared.of(filesDir)
         Actions.clearExports(this)
         val version = runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull() ?: ""
         // Safety round 6 Q8: a shared picture is read once, not again after a rotation or a theme change.
-        if (savedInstanceState == null) handleShared(intent)
+        // Not again when reopened from Recents: Android hands the old share back then (Q2-6).
+        if (savedInstanceState == null && (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0) handleShared(intent)
         val env = Env(
             history = history,
             version = version,

@@ -94,6 +94,22 @@ object Content {
     /** An address with parts a mail app could read as more than an address. */
     fun oddAddress(to: String): Boolean = to.any { it in "?&#=%" }
 
+    private val LINK_IN_TEXT = Regex("""(?i)\b(?:https?://|www\.)[^\s<>"']+""")
+
+    /** Every web link written inside other text (a card's note, an event's place or details, a message), at most 5 (Q2-3). */
+    fun linksIn(vararg texts: String): List<String> = texts.flatMap { t -> LINK_IN_TEXT.findAll(t).map { it.value.trimEnd('.', ',', ')', ';') }.toList() }
+        .map { if (it.startsWith("www.", ignoreCase = true)) "https://$it" else it }.distinct().take(5)
+
+    /** The lookalike warnings of the domains of these email addresses (Cyrillic а in "pаypal.com"), as English templates (Q2-3). */
+    fun addressWarnings(addresses: List<String>): List<String> = addresses.mapNotNull { a ->
+        a.substringAfterLast('@', "").trim().takeIf { it.isNotEmpty() }
+    }.flatMap { domain ->
+        val r = LinkCheck.check("https://$domain/")
+        if (!r.opens) (if (domain.any { it.code > 0x7F }) listOf(ADDRESS_LETTERS) else emptyList()) else r.warnings.filter { it == LinkCheck.PUNYCODE || it == LinkCheck.MIXED }.map { if (it == LinkCheck.PUNYCODE) ADDRESS_LETTERS else it }
+    }.distinct()
+
+    const val ADDRESS_LETTERS = "The address uses letters outside a–z. Check it carefully: it may imitate another address."
+
     /** A typed address becomes a web link: "example.com" gets https:// in front. */
     fun link(s: String): String {
         val t = s.trim()
