@@ -68,8 +68,11 @@ class History(private val file: File, private val settings: File) {
     }
 
     /** A spreadsheet cell: quoted, and text that starts like a formula gets a ' in front (APP-RULES safety 15). */
-    private fun cell(s: String): String {
-        val safe = if (s.isNotEmpty() && s[0] in "=+-@\t\r" && s.toDoubleOrNull() == null) "'$s" else s
+    private fun cell(raw: String): String {
+        // Hidden control characters go; a formula start counts after leading spaces too (APP-RULES 70).
+        val s = raw.filter { it == '\n' || it == '\t' || it == '\r' || !it.isISOControl() }
+        val lead = s.trimStart()
+        val safe = if (lead.isNotEmpty() && lead[0] in "=+-@" && lead.toDoubleOrNull() == null) "'$s" else s
         return "\"" + safe.replace("\"", "\"\"") + "\""
     }
 

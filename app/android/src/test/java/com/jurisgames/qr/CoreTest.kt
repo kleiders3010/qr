@@ -137,4 +137,14 @@ class CoreTest {
         fresh.clear()
         assertTrue(fresh.all().isEmpty())
     }
+
+    /** APP-RULES 70: a formula after leading spaces or a hidden control character is neutralised too. */
+    @Test fun csvFormulasAfterSpacesOrControls() {
+        val dir = Files.createTempDirectory("qr-csv").toFile()
+        val h = History(java.io.File(dir, "history"), java.io.File(dir, "history-setting"))
+        h.add("  =1+1", "text", "QR_CODE", made = true, now = 1)
+        h.add("\u0001@SUM(A1)", "text", "QR_CODE", made = true, now = 2)
+        val csv = h.csv()
+        assertTrue(csv, csv.contains("\"'  =1+1\"") && csv.contains("\"'@SUM(A1)\"") && !csv.contains("\u0001"))
+    }
 }
