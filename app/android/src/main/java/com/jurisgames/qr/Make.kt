@@ -119,9 +119,12 @@ object Content {
 
 /** A code as squares, drawn by the app, saved as PNG (Android) or SVG (here), and read back before it is offered. */
 object Codes {
-    /** The most text one code holds at the lowest correction (version 40, L: 2953 bytes); at H it is 1273. */
-    const val MAX_BYTES_H = 1273
-    const val MAX_BYTES = 2953
+    /**
+     * The most text one code holds at the correction [matrix] uses: M without a picture (version 40: 2334 bytes less 4 for the UTF-8 mark and length;
+     * 2953 is level L, which is never used, so text in between made nothing at all: UX review U-Q8), H with one (1272).
+     */
+    const val MAX_BYTES_H = 1272
+    const val MAX_BYTES = 2330
 
     /** A code's dark squares, without the quiet zone (added when drawn). Correction H when a logo covers the middle. */
     fun matrix(text: String, withLogo: Boolean): BitMatrix {

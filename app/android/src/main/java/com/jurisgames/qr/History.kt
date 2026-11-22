@@ -67,6 +67,13 @@ class History(private val file: File, private val settings: File) {
     @Synchronized
     fun remove(e: Entry): Boolean = runCatching { save(all().filterNot { it == e }) }.isSuccess
 
+    /** Undo of [remove] (UX review U-Q13): the entry goes back in its place by time, even with the history off. */
+    @Synchronized
+    fun restore(e: Entry): Boolean = runCatching {
+        if (all().any { it == e }) return true
+        save((all() + e).sortedByDescending { it.time }.take(MAX))
+    }.isSuccess
+
     fun clear() {
         file.delete()
         cache = emptyList()

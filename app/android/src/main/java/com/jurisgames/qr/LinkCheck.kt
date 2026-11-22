@@ -40,17 +40,33 @@ object LinkCheck {
     )
 
     const val NOT_WEB = "This isn't a web link, so it won't open."
-    const val OTHER_SCHEME = "Links of this kind ({scheme}:) don't open from here."
+    const val OTHER_SCHEME = "Links of this kind ({scheme}:) don't open from here. Copy it only if you trust who made the code."
     const val BROKEN = "This link is written in an unusual way, so it won't open. Copy it only if you trust who made the code."
-    const val HTTP = "Not secure (http): others on the network can see or change the page."
-    const val USERINFO = "The link has text before an @ that looks like an address. It really goes to {host}."
-    const val IP = "It goes to a bare number address, not a named site."
-    const val PUNYCODE = "The name uses letters outside a–z ({letters}). Check it carefully: it may imitate another site."
-    const val MIXED = "The name mixes alphabets. Check it carefully: it may imitate another site."
-    const val SHORT = "This is a short link: where it really leads is only shown after opening."
+    const val HTTP = "This page isn't protected (http): others on the network can see or change it. Don't type passwords or card numbers there."
+    const val USERINFO = "The link has text before an @ that looks like an address. It really goes to {host}: don't trust the part before the @."
+    const val IP = "It goes to a computer by its number instead of a site name. Real shops and banks don't do this."
+    const val PUNYCODE = "The name uses letters from another alphabet ({letters}). It may be pretending to be another site: don't sign in or pay there."
+    const val MIXED = "The name mixes letters from different alphabets. It may be pretending to be another site: don't sign in or pay there."
+    const val SHORT = "This is a short link: where it really leads is only shown after opening. Open it only if you trust who made the code."
     const val LONG = "This link is unusually long."
-    const val PORT = "It uses an unusual port ({port})."
-    const val DECEPTIVE = "The real site is {site}. The words before it are only part of its address and can say anything."
+    const val PORT = "It uses an unusual port number ({port}). That's normal for home devices like a router, but odd for a shop or a bank."
+    const val DECEPTIVE = "The real site is {site}. The words before it are only part of its address and can say anything: don't sign in or pay there unless {site} is who you expect."
+
+    /**
+     * Warnings that mean "this is probably a trap" (UX review U-Q3): the screen then leads with a plain sentence and
+     * the real ASCII name, and Open becomes "Open anyway" with one question. The rest (http, a port, a short or long
+     * link, hidden characters) keep the normal layout.
+     */
+    val SERIOUS = setOf(PUNYCODE, MIXED, USERINFO, DECEPTIVE, IP)
+
+    fun serious(r: Report): Boolean = r.warnings.any { it in SERIOUS }
+
+    /**
+     * The bold name on the result screen. A lookalike is never shown in its Unicode form here (U-Q3): with letters
+     * from another alphabet the bold line is the ASCII form the browser really uses ("xn--pple-43d.com").
+     */
+    fun headline(r: Report): String =
+        if (PUNYCODE in r.warnings || MIXED in r.warnings) r.ascii else r.site.ifEmpty { r.host }
 
     /** Every warning text, for the translation test. */
     val ALL = listOf(NOT_WEB, OTHER_SCHEME, BROKEN, HTTP, USERINFO, IP, PUNYCODE, MIXED, SHORT, LONG, PORT, DECEPTIVE, Visible.WARNING)

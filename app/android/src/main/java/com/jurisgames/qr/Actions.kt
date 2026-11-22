@@ -43,11 +43,16 @@ object Actions {
         return r.opens && go(ctx, Intent(Intent.ACTION_VIEW, Uri.parse(r.target)).addCategory(Intent.CATEGORY_BROWSABLE))
     }
 
+    /** Which way "Join this network" went, so the screen can say what's next (UX review U-Q14). */
+    enum class Join { Sheet, Settings, Failed }
+
+    private fun settings(ctx: Context) = if (go(ctx, Intent(Settings.ACTION_WIFI_SETTINGS))) Join.Settings else Join.Failed
+
     /** Android 11+: the system's own "Save this network?" sheet, no permission needed. Older phones: Wi-Fi settings. */
-    fun joinWifi(ctx: Context, w: Payload.Wifi): Boolean {
+    fun joinWifi(ctx: Context, w: Payload.Wifi): Join {
         if (Build.VERSION.SDK_INT >= 30) {
             val sec = w.security.uppercase()
-            if (sec !in setOf("WPA", "WPA2", "WPA3", "SAE", "NOPASS", "")) return go(ctx, Intent(Settings.ACTION_WIFI_SETTINGS))
+            if (sec !in setOf("WPA", "WPA2", "WPA3", "SAE", "NOPASS", "")) return settings(ctx)
             // Safety round 6 Q14: the builder throws on a password that isn't plain ASCII (or an odd name); every call
             // is inside the catch, and a refusal opens Wi-Fi settings (the screen offers "Copy password").
             val s = runCatching {
@@ -57,17 +62,30 @@ object Actions {
                     "WPA3", "SAE" -> b.setWpa3Passphrase(w.password)
                 }
                 b.build()
-            }.getOrNull() ?: return go(ctx, Intent(Settings.ACTION_WIFI_SETTINGS))
-            return go(ctx, Intent(Settings.ACTION_WIFI_ADD_NETWORKS).putParcelableArrayListExtra(Settings.EXTRA_WIFI_NETWORK_LIST, arrayListOf(s)))
+            }.getOrNull() ?: return settings(ctx)
+            return if (go(ctx, Intent(Settings.ACTION_WIFI_ADD_NETWORKS).putParcelableArrayListExtra(Settings.EXTRA_WIFI_NETWORK_LIST, arrayListOf(s)))) Join.Sheet else settings(ctx)
         }
-        return go(ctx, Intent(Settings.ACTION_WIFI_SETTINGS))
+        return settings(ctx)
     }
 
     fun addContact(ctx: Context, c: Payload.Contact): Boolean {
         val i = Intent(ContactsContract.Intents.Insert.ACTION).setType(ContactsContract.RawContacts.CONTENT_TYPE)
             .putExtra(ContactsContract.Intents.Insert.NAME, c.name)
-        c.safePhones.firstOrNull()?.let { i.putExtra(ContactsContract.Intents.Insert.PHONE, it) } // never a phone command (Q2-2)
-        c.emails.firstOrNull()?.let { i.putExtra(ContactsContract.Intents.Insert.EMAIL, it) }
+        // every phone (never a phone command, Q2-2), every email and the website, as the screen shows them (U-Q15)
+        val rows = ArrayList<ContentValues>()
+        for (p in c.safePhones) rows += ContentValues().apply {
+            put(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.Phone.CONTENT_ITEM_TYPE)
+            put(ContactsContract.CommonDataKinds.Phone.NUMBER, p)
+        }
+        for (e in c.emails) rows += ContentValues().apply {
+            put(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.Email.CONTENT_ITEM_TYPE)
+            put(ContactsContract.CommonDataKinds.Email.ADDRESS, e)
+        }
+        if (c.url.isNotEmpty()) rows += ContentValues().apply {
+            put(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.Website.CONTENT_ITEM_TYPE)
+            put(ContactsContract.CommonDataKinds.Website.URL, c.url)
+        }
+        if (rows.isNotEmpty()) i.putParcelableArrayListExtra(ContactsContract.Intents.Insert.DATA, rows)
         if (c.org.isNotEmpty()) i.putExtra(ContactsContract.Intents.Insert.COMPANY, c.org)
         if (c.address.isNotEmpty()) i.putExtra(ContactsContract.Intents.Insert.POSTAL, c.address)
         if (c.note.isNotEmpty()) i.putExtra(ContactsContract.Intents.Insert.NOTES, c.note)
@@ -91,7 +109,9 @@ object Actions {
 
     fun map(ctx: Context, g: Payload.Geo) = go(ctx, Intent(Intent.ACTION_VIEW, Uri.parse("geo:${g.lat},${g.lng}?q=${g.lat},${g.lng}")))
 
-    fun search(ctx: Context, q: String) = go(ctx, Intent(Intent.ACTION_WEB_SEARCH).putExtra(android.app.SearchManager.QUERY, q))
+    /** The phone's web search, or a search page in the browser when no app handles it (U-Q26). */
+    fun search(ctx: Context, q: String) = go(ctx, Intent(Intent.ACTION_WEB_SEARCH).putExtra(android.app.SearchManager.QUERY, q)) ||
+        go(ctx, Intent(Intent.ACTION_VIEW, Uri.parse("https://duckduckgo.com/?q=" + java.net.URLEncoder.encode(q, "UTF-8"))).addCategory(Intent.CATEGORY_BROWSABLE))
 
     /** The code as a picture: [px] pixels per square, the quiet zone around it, the logo (if any) on a rounded tile. */
     fun bitmap(text: String, fg: Int, bg: Int, logo: Bitmap?, px: Int = 16): Bitmap {

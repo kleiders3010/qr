@@ -17,6 +17,7 @@ class SpanishTest {
         keys += LinkCheck.ALL
         keys += listOfNotNull(Codes.colorProblem(0xFFFFFFFF.toInt(), 0xFF000000.toInt()), Codes.colorProblem(0xFFAAAAAA.toInt(), 0xFFFFFFFF.toInt()))
         keys += Feedback.kinds.map { it.second }
+        keys += SQUARE_NAMES + BACK_NAMES // swatch names, read by tr(name)
         val missing = keys.filter { !ES.containsKey(it.replace("\\\"", "\"")) }
         assertTrue("no Spanish for: $missing", missing.isEmpty())
     }

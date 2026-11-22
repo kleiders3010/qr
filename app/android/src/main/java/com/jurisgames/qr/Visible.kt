@@ -6,7 +6,7 @@ package com.jurisgames.qr
  * other apps still get the real text.
  */
 object Visible {
-    const val WARNING = "This code has hidden characters, shown here as [U+…]. They can make text look like something else."
+    const val WARNING = "This code has hidden characters, shown here as [U+…]. They can make text look like something else: check it before you trust it."
 
     fun isHidden(cp: Int): Boolean {
         if (cp == '\n'.code || cp == '\t'.code || cp == '\r'.code) return false
