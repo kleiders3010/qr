@@ -209,7 +209,7 @@ private fun EntryRow(e: History.Entry, onOpen: (History.Entry) -> Unit, onDelete
     val time = remember(e.time) { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(e.time)) }
     Row(Modifier.fillMaxWidth().clickable { onOpen(e) }.padding(vertical = 8.dp).testTag("entry"), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text(e.text.lineSequence().firstOrNull { it.isNotBlank() } ?: e.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(remember(e.text, e.format) { Payload.of(e.text, runCatching { BarcodeFormat.valueOf(e.format) }.getOrDefault(BarcodeFormat.QR_CODE)).summary() }, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text((if (e.made) tr("Made") else tr("Scanned")) + " · " + kindLabel(e.kind) + " · " + time, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (onDelete != null) TextButton(onClick = { onDelete(e) }, modifier = Modifier.testTag("deleteEntry")) { Text("✕") }
@@ -225,7 +225,7 @@ private fun ResultScreen(text: String, format: BarcodeFormat, note: (String) -> 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(kindLabel(p.kind), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.testTag("kind"))
         @Composable fun line(label: String, value: String) {
-            if (value.isNotBlank()) Column { Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant); Text(value, style = MaterialTheme.typography.bodyLarge) }
+            if (value.isNotBlank()) Column { Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant); Text(Visible.show(value), style = MaterialTheme.typography.bodyLarge) }
         }
         when (p) {
             is Payload.Link -> {
@@ -234,8 +234,10 @@ private fun ResultScreen(text: String, format: BarcodeFormat, note: (String) -> 
                     Text(tr("It goes to"), style = MaterialTheme.typography.bodySmall)
                     Text(r.site.ifEmpty { r.host }, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.testTag("site"))
                     if (r.host != r.site) Text(r.host, style = MaterialTheme.typography.bodyMedium)
+                    // A lookalike reads like the real name in bold: its ASCII form (what the browser uses) shows the difference.
+                    if (r.ascii != r.host) Text(r.ascii, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("asciiHost"))
                 }
-                Text(p.url, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("fullUrl"))
+                Text(Visible.show(p.url), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("fullUrl"))
                 for (w in r.warnings) Text("⚠ " + LinkCheck.shown(w, r), color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("warning"))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     // With warnings, Open is not the button the eye goes to first.
@@ -272,8 +274,15 @@ private fun ResultScreen(text: String, format: BarcodeFormat, note: (String) -> 
                 Button(onClick = { failed(Actions.addEvent(ctx, p)) }, modifier = Modifier.testTag("addEvent")) { Text(tr("Add to calendar")) }
             }
             is Payload.Phone -> {
-                line(tr("Number"), p.number)
-                Button(onClick = { failed(Actions.dial(ctx, p.number)) }, modifier = Modifier.testTag("dial")) { Text(tr("Call")) }
+                if (p.isCommand) {
+                    // Safety round 6 Q3: * or # makes it a phone command (*21* forwards all calls); no Call button for it.
+                    line(tr("Phone command, not a number"), p.number)
+                    Text("⚠ " + tr("Codes like this change phone settings: some send all your calls to another number. Don't dial it unless you know what it does."), color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("warning"))
+                    OutlinedButton(onClick = { Actions.copy(ctx, "number", p.number); note(tr("Copied")) }, modifier = Modifier.testTag("copy")) { Text(tr("Copy")) }
+                } else {
+                    line(tr("Number"), p.number)
+                    Button(onClick = { failed(Actions.dial(ctx, p.number)) }, modifier = Modifier.testTag("dial")) { Text(tr("Call")) }
+                }
             }
             is Payload.Sms -> {
                 line(tr("To"), p.number); line(tr("Message"), p.body)
@@ -281,6 +290,7 @@ private fun ResultScreen(text: String, format: BarcodeFormat, note: (String) -> 
             }
             is Payload.Email -> {
                 line(tr("To"), p.to); line(tr("Subject"), p.subject); line(tr("Message"), p.body)
+                if (Content.oddAddress(p.to)) Text("⚠ " + tr("The address has characters (? & # = %) that aren't part of a normal address. It is passed on as one odd address, nothing more."), color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("warning"))
                 Button(onClick = { failed(Actions.email(ctx, p)) }, modifier = Modifier.testTag("email")) { Text(tr("Write the email")) }
             }
             is Payload.Geo -> {
@@ -291,12 +301,13 @@ private fun ResultScreen(text: String, format: BarcodeFormat, note: (String) -> 
                 line(tr("Product number"), p.code)
                 Button(onClick = { failed(Actions.search(ctx, p.code)) }, modifier = Modifier.testTag("search")) { Text(tr("Search the web for it")) }
             }
-            is Payload.Text -> Text(p.raw, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.testTag("text"))
+            is Payload.Text -> Text(Visible.show(p.raw), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.testTag("text"))
         }
+        if (p !is Payload.Link && Visible.has(text)) Text("⚠ " + tr(Visible.WARNING), color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("warning"))
         if (p !is Payload.Link) {
             HorizontalDivider()
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { Actions.copy(ctx, "code", text); note(tr("Copied")) }, modifier = Modifier.testTag("copyAll")) { Text(tr("Copy all")) }
+                OutlinedButton(onClick = { Actions.copy(ctx, "code", text, secret = p is Payload.Wifi); note(tr("Copied")) }, modifier = Modifier.testTag("copyAll")) { Text(tr("Copy all")) }
                 OutlinedButton(onClick = { failed(Actions.shareText(ctx, text)) }, modifier = Modifier.testTag("shareAll")) { Text(tr("Share")) }
             }
         }
@@ -449,6 +460,7 @@ private fun Swatches(colors: List<Int>, chosen: Int, tag: String, pick: (Int) ->
 
 @Composable
 private fun HistoryScreen(env: Env, version: Int, onChanged: () -> Unit, onOpen: (History.Entry) -> Unit, note: (String) -> Unit) {
+    val ctx = LocalContext.current
     var q by remember { mutableStateOf("") }
     var confirmClear by remember { mutableStateOf(false) }
     var on by remember { mutableStateOf(env.history.enabled) }
@@ -465,6 +477,8 @@ private fun HistoryScreen(env: Env, version: Int, onChanged: () -> Unit, onOpen:
             }, modifier = Modifier.testTag("exportCsv")) { Text(tr("Save as a spreadsheet")) }
             TextButton(enabled = env.history.all().isNotEmpty(), onClick = { confirmClear = true }, modifier = Modifier.testTag("clear")) { Text(tr("Clear all")) }
         }
+        // Safety round 6 Q4: the spreadsheet holds each code's full text, Wi-Fi passwords included.
+        if (list.any { it.kind == "wifi" }) Text(tr("The spreadsheet includes Wi-Fi passwords."), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (list.isEmpty()) Text(if (q.isBlank()) tr("Nothing here yet.") else tr("Nothing matches."), modifier = Modifier.padding(top = 16.dp))
         LazyColumn(Modifier.fillMaxSize()) {
             items(list, key = { it.time.toString() + it.made + it.text.hashCode() }) { e ->
@@ -475,7 +489,7 @@ private fun HistoryScreen(env: Env, version: Int, onChanged: () -> Unit, onOpen:
     }
     if (confirmClear) AlertDialog(
         onDismissRequest = { confirmClear = false },
-        confirmButton = { TextButton(onClick = { env.history.clear(); confirmClear = false; onChanged() }, modifier = Modifier.testTag("clearYes")) { Text(tr("Clear")) } },
+        confirmButton = { TextButton(onClick = { env.history.clear(); Actions.clearExports(ctx); confirmClear = false; onChanged() }, modifier = Modifier.testTag("clearYes")) { Text(tr("Clear")) } },
         dismissButton = { TextButton(onClick = { confirmClear = false }) { Text(tr("Cancel")) } },
         title = { Text(tr("Clear the history?")) },
         text = { Text(tr("Every code in the history is removed from this phone. This can't be undone.")) },
@@ -501,7 +515,7 @@ private fun FeedbackDialog(env: Env, onSent: () -> Unit, onClose: () -> Unit) {
                 if (message.isBlank()) { error = tr("Write a few words first."); return@TextButton }
                 sending = true; error = ""
                 scope.launch {
-                    val problem = withContext(Dispatchers.IO) { Feedback.send(body) }
+                    val problem = withContext(Dispatchers.IO) { Feedback.send(body, env.version) }
                     sending = false
                     if (problem == null) onSent() else error = problem
                 }

@@ -14,8 +14,7 @@ class SpanishTest {
             Regex("""(?<![A-Za-z])tr\("((?:[^"\\]|\\.)*)"""").findAll(s).forEach { keys += it.groupValues[1] }
         }
         // Warnings and color problems are shown through tr(constant).
-        keys += listOf(LinkCheck.NOT_WEB, LinkCheck.OTHER_SCHEME, LinkCheck.HTTP, LinkCheck.USERINFO, LinkCheck.IP, LinkCheck.PUNYCODE,
-            LinkCheck.MIXED, LinkCheck.SHORT, LinkCheck.LONG, LinkCheck.PORT)
+        keys += LinkCheck.ALL
         keys += listOfNotNull(Codes.colorProblem(0xFFFFFFFF.toInt(), 0xFF000000.toInt()), Codes.colorProblem(0xFFAAAAAA.toInt(), 0xFFFFFFFF.toInt()))
         keys += Feedback.kinds.map { it.second }
         val missing = keys.filter { !ES.containsKey(it.replace("\\\"", "\"")) }

@@ -24,7 +24,10 @@ sealed class Payload {
                        val org: String, val address: String, val url: String, val note: String) : Payload()
     data class Event(override val raw: String, val title: String, val startMs: Long, val endMs: Long, val allDay: Boolean,
                      val location: String, val description: String) : Payload()
-    data class Phone(override val raw: String, val number: String) : Payload()
+    data class Phone(override val raw: String, val number: String) : Payload() {
+        /** Safety round 6 Q3: with * or # it is a network command (*21*...# forwards every call), not a number. */
+        val isCommand: Boolean get() = number.any { it == '*' || it == '#' }
+    }
     data class Sms(override val raw: String, val number: String, val body: String) : Payload()
     data class Email(override val raw: String, val to: String, val subject: String, val body: String) : Payload()
     data class Geo(override val raw: String, val lat: Double, val lng: Double, val query: String) : Payload()
@@ -36,6 +39,15 @@ sealed class Payload {
         is Link -> "link"; is Wifi -> "wifi"; is Contact -> "contact"; is Event -> "event"; is Phone -> "phone"
         is Sms -> "sms"; is Email -> "email"; is Geo -> "geo"; is Product -> "product"; is Text -> "text"
     }
+
+    /**
+     * One line for lists (Recent, History), built from the parsed parts and never the raw text for kinds with a secret
+     * (safety round 6 Q4: a Wi-Fi code's raw text holds its password). Hidden characters are shown as marks.
+     */
+    fun summary(): String = Visible.show(when (this) {
+        is Wifi -> ssid.ifEmpty { tr("Wi-Fi") }
+        else -> raw.lineSequence().firstOrNull { it.isNotBlank() } ?: raw
+    })
 
     companion object {
         /** Reads [raw] (the code's text) with ZXing's own parsers; [format] is the barcode type it came from. */

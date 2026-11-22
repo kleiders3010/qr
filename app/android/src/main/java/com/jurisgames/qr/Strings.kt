@@ -65,8 +65,18 @@ val ES: Map<String, String> = mapOf(
     "The link has text before an @ that looks like an address. It really goes to {host}." to
         "El enlace tiene texto antes de una @ que parece una dirección. En realidad lleva a {host}.",
     "It goes to a bare number address, not a named site." to "Lleva a una dirección numérica, no a un sitio con nombre.",
-    "The name uses letters from other alphabets. Check it carefully: it may imitate another site." to
-        "El nombre usa letras de otros alfabetos. Revisalo bien: puede imitar a otro sitio.",
+    "The name uses letters outside a–z ({letters}). Check it carefully: it may imitate another site." to
+        "El nombre usa letras fuera de a–z ({letters}). Revisalo bien: puede imitar a otro sitio.",
+    "This link is written in an unusual way, so it won't open. Copy it only if you trust who made the code." to
+        "Este enlace está escrito de una forma rara, así que no se abre. Copialo solo si confiás en quien hizo el código.",
+    "This code has hidden characters, shown here as [U+…]. They can make text look like something else." to
+        "Este código tiene caracteres ocultos, mostrados acá como [U+…]. Pueden hacer que un texto parezca otra cosa.",
+    "Phone command, not a number" to "Comando del teléfono, no un número",
+    "Codes like this change phone settings: some send all your calls to another number. Don't dial it unless you know what it does." to
+        "Los códigos así cambian ajustes del teléfono: algunos desvían todas tus llamadas a otro número. No lo marques si no sabés qué hace.",
+    "The address has characters (? & # = %) that aren't part of a normal address. It is passed on as one odd address, nothing more." to
+        "La dirección tiene caracteres (? & # = %) que no son de una dirección normal. Se pasa como una sola dirección rara, nada más.",
+    "The spreadsheet includes Wi-Fi passwords." to "La planilla incluye contraseñas de Wi-Fi.",
     "The name mixes alphabets. Check it carefully: it may imitate another site." to "El nombre mezcla alfabetos. Revisalo bien: puede imitar a otro sitio.",
     "This is a short link: where it really leads is only shown after opening." to "Es un enlace acortado: adónde lleva de verdad solo se ve al abrirlo.",
     "This link is unusually long." to "Este enlace es inusualmente largo.",

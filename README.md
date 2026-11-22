@@ -3,9 +3,11 @@
 An Android app that reads QR codes and barcodes and makes QR codes.
 
 - **Scan** with the camera, or read a code from a picture or a shared screenshot.
-- **See where a link goes before opening it.** The site's name is shown in bold, with warnings for: no https, text
-  before an `@`, a bare number address, letters from other alphabets, short links, unusual ports, very long links.
-  Only web links open from the app.
+- **See where a link goes before opening it.** The whole name of the place it goes is shown in bold (with its
+  ASCII form when it has letters outside a-z), with warnings for: no https, text before an `@`, a bare number address
+  in any notation, letters outside a-z, hidden characters, well-known short links and QR redirectors (the list is not
+  complete), unusual ports, very long links. Only web links open from the app, and a link written in a way the strict
+  check can't read doesn't open at all.
 - **Each kind of code gets its own screen:** Wi-Fi (join, copy the password), contacts, calendar events, phone, text
   message, email, places, product numbers, plain text.
 - **Make codes** for links, Wi-Fi, contacts, events, phone numbers, text messages, email and plain text. You can pick

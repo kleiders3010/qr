@@ -74,7 +74,7 @@ class CoreTest {
     @Test fun linkCheckShowsTheRealPlace() {
         val ok = LinkCheck.check("https://www.mercadolibre.com.ar/x")
         assertTrue(ok.opens)
-        assertEquals("mercadolibre.com.ar", ok.site)
+        assertEquals("www.mercadolibre.com.ar", ok.site) // pinned: safety round 6 Q6, the whole host is shown in bold
         assertTrue(ok.warnings.isEmpty())
 
         val at = LinkCheck.check("https://www.bank.com@evil.example/login")
@@ -89,6 +89,67 @@ class CoreTest {
         for (bad in listOf("javascript:alert(1)", "intent://x#Intent;end", "file:///sdcard/a", "content://x/y", "not a link")) {
             assertFalse(bad, LinkCheck.check(bad).opens)
         }
+    }
+
+    /**
+     * Safety round 6 (APP-RULES 75-77): each promised warning against the ways around it. A probe either gets its
+     * warning or does not open at all; nothing slips through as a clean link.
+     */
+    @Test fun linkWarningsHoldAgainstEvasions() {
+        fun warned(url: String, w: String) {
+            val r = LinkCheck.check(url)
+            assertTrue("$url -> ${r.opens} ${r.warnings}", (r.opens && w in r.warnings) || (!r.opens && r.warnings == listOf(LinkCheck.BROKEN)))
+        }
+        // pinned: Q1 lookalike letters outside Cyrillic/Greek
+        for (u in listOf("https://ɡoogle.com/", "https://paypaı.com/", "https://gօօgle.com/", "https://bücher.example/", "https://xn--pple-43d.com"))
+            warned(u, LinkCheck.PUNYCODE)
+        val g = LinkCheck.check("https://ɡoogle.com/")
+        assertTrue(g.letters, g.letters.contains("U+0261"))
+        assertTrue(g.ascii, g.ascii.startsWith("xn--") && g.ascii != g.host)
+        assertTrue(g.target, g.target.startsWith("https://xn--") && g.target.all { it.code < 128 })
+        // pinned: Q2 the @ and the port survive a host the loose parser can't read
+        for (u in listOf("https://www.paypal.com@bücher.example/", "https://www.bank.com@evil.example/login", "https://accounts.google.com@login@evil.example/"))
+            warned(u, LinkCheck.USERINFO)
+        assertFalse(LinkCheck.check("https://accounts.google.com@login@evil.example/").opens)
+        assertEquals("bücher.example", LinkCheck.check("https://www.paypal.com@bücher.example/").host)
+        for (u in listOf("https://bücher.example:8443/", "https://example.com:8443/")) warned(u, LinkCheck.PORT)
+        // pinned: Q5 number addresses in every notation
+        for (u in listOf("https://3232235777/", "https://0x7f000001/", "https://0177.0.0.1/", "https://192.168.1/", "https://0xC0.0xA8.0x1.0x1/", "https://[::1]/", "https://192.168.0.1/"))
+            warned(u, LinkCheck.IP)
+        assertEquals("192.168.0.1", LinkCheck.check("https://192.168.0.1/").site) // the whole number, never "0.1"
+        assertTrue(LinkCheck.isNumber("0xc0.0xa8.0x1.0x1") && LinkCheck.isNumber("3232235777") && !LinkCheck.isNumber("example.com"))
+        // pinned: Q6 shared hosting shows the whole host; QR redirectors are short links
+        assertEquals("paypal-login.github.io", LinkCheck.check("https://paypal-login.github.io/").site)
+        for (u in listOf("https://linktr.ee/x", "https://qr.link/x", "https://www.bit.ly/x")) warned(u, LinkCheck.SHORT)
+        // pinned: Q15 hidden and direction-changing characters
+        warned("https://evil.example/‮moc.elgoog//:sptth", Visible.WARNING)
+        warned("https://example.com/a​b", Visible.WARNING)
+        // Things that never open.
+        for (bad in listOf("https://g%6Fogle.com/", "https://exa mple.com/", "https://example.com:80x/", "https://[::1/", "https:evil", "https:///evil"))
+            assertFalse(bad, LinkCheck.check(bad).opens)
+        // Clean names stay clean.
+        for (u in listOf("https://example.com/", "https://sub.example.co.uk/a?b=c#d", "http://localhost:80/"))
+            assertTrue(u, LinkCheck.check(u).warnings.none { it == LinkCheck.PUNYCODE || it == LinkCheck.IP || it == LinkCheck.USERINFO || it == LinkCheck.PORT })
+    }
+
+    @Test fun hiddenCharactersAreShown() {
+        assertEquals("a[U+202E]b", Visible.show("a‮b")) // pinned: Q15 the mark's form
+        assertEquals("line\nnext\ttab", Visible.show("line\nnext\ttab"))
+        assertTrue(Visible.has("x‍y") && Visible.has("﻿=1") && !Visible.has("ñandú 😀"))
+    }
+
+    /** pinned: safety round 6 Q3, Q4, Q7 */
+    @Test fun scannedPartsCantHideWhatTheyDo() {
+        assertTrue((Payload.of("tel:**21*5491100000000#") as Payload.Phone).isCommand)
+        assertFalse((Payload.of("tel:+5491100000000") as Payload.Phone).isCommand)
+        val w = Payload.of("WIFI:T:WPA;S:Home;P:secret123;;")
+        assertEquals("Home", w.summary())
+        assertFalse(w.summary().contains("secret"))
+        val m = Payload.of("mailto:victim%40x.com%3Fbcc%3Dattacker%40evil.example%26body%3Dhidden") as Payload.Email
+        assertTrue(m.to, Content.oddAddress(m.to))
+        val link = Content.email(m.to, "", "")
+        assertFalse(link, link.contains("?") || link.contains("&"))
+        assertEquals("mailto:a@b.com,c@d.org?subject=Hi", Content.email("a@b.com, c@d.org", "Hi", ""))
     }
 
     /** pinned: a deceptive link is shown as a link with its warnings, never as plain text (ZXing alone drops it to text). */

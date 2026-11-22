@@ -50,13 +50,15 @@ object Feedback {
     }
 
     /** Sends it; returns null when it went, or a sentence to show. */
-    fun send(body: String): String? = try {
+    fun send(body: String, version: String = ""): String? = try {
         val c = URI(target()).toURL().openConnection() as HttpURLConnection
         c.requestMethod = "POST"
         c.doOutput = true
         c.connectTimeout = 15_000
         c.readTimeout = 20_000
         c.setRequestProperty("Content-Type", "application/json")
+        // Safety round 6 Q13: our own name, not the system default (which carries the phone model and Android version).
+        c.setRequestProperty("User-Agent", "QR/$version")
         c.outputStream.use { it.write(body.toByteArray()) }
         val code = c.responseCode
         val answer = (if (code < 400) c.inputStream else c.errorStream)?.bufferedReader()?.readText() ?: ""

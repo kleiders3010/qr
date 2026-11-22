@@ -13,7 +13,7 @@ No price words (Play Metadata policy): no "free", "no cost", "gratis" in the tit
 QR reads QR codes and barcodes and makes QR codes, without ads or an account.
 
 SEE WHERE A LINK GOES
-Before anything opens, the site's name is shown in bold. QR warns you about links without https, a fake address hidden before an @, bare number addresses, letters from other alphabets that imitate a real site, short links, unusual ports and very long links. Only web links open, and only when you tap Open.
+Before anything opens, the place a link goes is shown in bold. QR warns you about links without https, a fake address hidden before an @, bare number addresses, letters from other alphabets that imitate a real site, hidden characters, well-known short links (the list isn't complete), unusual ports and very long links. Only web links open, and only when you tap Open.
 
 EVERY KIND OF CODE
 Wi-Fi (join the network or copy the password), contacts, calendar events, phone numbers, text messages, email, places on a map, product barcodes and plain text each get their own screen.
@@ -40,7 +40,7 @@ Open source (Apache-2.0): github.com/kleiders3010/qr. In English and Spanish. Se
 QR lee códigos QR y de barras y crea códigos QR, sin anuncios ni cuenta.
 
 MIRÁ ADÓNDE LLEVA UN ENLACE
-Antes de abrir nada, el nombre del sitio se muestra en negrita. QR te avisa de enlaces sin https, de una dirección falsa escondida antes de una @, de direcciones numéricas, de letras de otros alfabetos que imitan a un sitio real, de enlaces acortados, de puertos poco comunes y de enlaces muy largos. Solo se abren enlaces web, y solo cuando tocás Abrir.
+Antes de abrir nada, el lugar adonde lleva un enlace se muestra en negrita. QR te avisa de enlaces sin https, de una dirección falsa escondida antes de una @, de direcciones numéricas, de letras de otros alfabetos que imitan a un sitio real, de caracteres ocultos, de enlaces acortados conocidos (la lista no es completa), de puertos poco comunes y de enlaces muy largos. Solo se abren enlaces web, y solo cuando tocás Abrir.
 
 CADA TIPO DE CÓDIGO
 Wi-Fi (conectarte o copiar la contraseña), contactos, eventos, teléfonos, mensajes de texto, email, lugares en el mapa, códigos de productos y texto: cada uno con su propia pantalla.

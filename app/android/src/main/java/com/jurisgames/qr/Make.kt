@@ -80,8 +80,19 @@ object Content {
 
     fun email(to: String, subject: String, body: String): String {
         val q = listOfNotNull(subject.takeIf { it.isNotBlank() }?.let { "subject=" + enc(it) }, body.takeIf { it.isNotBlank() }?.let { "body=" + enc(it) })
-        return "mailto:" + to.trim() + (if (q.isEmpty()) "" else "?" + q.joinToString("&"))
+        return "mailto:" + address(to) + (if (q.isEmpty()) "" else "?" + q.joinToString("&"))
     }
+
+    /**
+     * Safety round 6 Q7: the address part of a mailto link keeps only letters, digits and @ , . + - _; anything else
+     * (an encoded ? or & from a scanned code, which would add a hidden bcc or message) is percent-encoded.
+     */
+    fun address(to: String): String = to.split(',').map { it.trim() }.filter { it.isNotEmpty() }.joinToString(",") { a ->
+        a.map { c -> if ((c in 'a'..'z') || (c in 'A'..'Z') || (c in '0'..'9') || c in "@.+-_") c.toString() else enc(c.toString()) }.joinToString("")
+    }
+
+    /** An address with parts a mail app could read as more than an address. */
+    fun oddAddress(to: String): Boolean = to.any { it in "?&#=%" }
 
     /** A typed address becomes a web link: "example.com" gets https:// in front. */
     fun link(s: String): String {

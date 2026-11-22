@@ -38,20 +38,27 @@ object Actions {
         go(ctx, Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), null))
 
     /** Only web links (LinkCheck decides); opened in the browser the person chose. */
-    fun open(ctx: Context, url: String) = LinkCheck.check(url).opens && go(ctx, Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE))
+    fun open(ctx: Context, url: String): Boolean {
+        val r = LinkCheck.check(url)
+        return r.opens && go(ctx, Intent(Intent.ACTION_VIEW, Uri.parse(r.target)).addCategory(Intent.CATEGORY_BROWSABLE))
+    }
 
     /** Android 11+: the system's own "Save this network?" sheet, no permission needed. Older phones: Wi-Fi settings. */
     fun joinWifi(ctx: Context, w: Payload.Wifi): Boolean {
         if (Build.VERSION.SDK_INT >= 30) {
-            val b = WifiNetworkSuggestion.Builder().setSsid(w.ssid).setIsHiddenSsid(w.hidden)
-            when (w.security.uppercase()) {
-                "WPA", "WPA2" -> b.setWpa2Passphrase(w.password)
-                "WPA3", "SAE" -> b.setWpa3Passphrase(w.password)
-                "NOPASS", "" -> {}
-                else -> return go(ctx, Intent(Settings.ACTION_WIFI_SETTINGS))
-            }
-            val list = arrayListOf(runCatching { b.build() }.getOrNull() ?: return false)
-            return go(ctx, Intent(Settings.ACTION_WIFI_ADD_NETWORKS).putParcelableArrayListExtra(Settings.EXTRA_WIFI_NETWORK_LIST, list))
+            val sec = w.security.uppercase()
+            if (sec !in setOf("WPA", "WPA2", "WPA3", "SAE", "NOPASS", "")) return go(ctx, Intent(Settings.ACTION_WIFI_SETTINGS))
+            // Safety round 6 Q14: the builder throws on a password that isn't plain ASCII (or an odd name); every call
+            // is inside the catch, and a refusal opens Wi-Fi settings (the screen offers "Copy password").
+            val s = runCatching {
+                val b = WifiNetworkSuggestion.Builder().setSsid(w.ssid).setIsHiddenSsid(w.hidden)
+                when (sec) {
+                    "WPA", "WPA2" -> b.setWpa2Passphrase(w.password)
+                    "WPA3", "SAE" -> b.setWpa3Passphrase(w.password)
+                }
+                b.build()
+            }.getOrNull() ?: return go(ctx, Intent(Settings.ACTION_WIFI_SETTINGS))
+            return go(ctx, Intent(Settings.ACTION_WIFI_ADD_NETWORKS).putParcelableArrayListExtra(Settings.EXTRA_WIFI_NETWORK_LIST, arrayListOf(s)))
         }
         return go(ctx, Intent(Settings.ACTION_WIFI_SETTINGS))
     }
@@ -120,7 +127,13 @@ object Actions {
         true
     }.getOrDefault(false)
 
+    /** Safety round 6 Q10 (APP-RULES 70): shared pictures don't stay; emptied on start, before each share and on clear. */
+    fun clearExports(ctx: Context) {
+        runCatching { File(ctx.cacheDir, "exports").listFiles()?.forEach { it.delete() } }
+    }
+
     fun sharePicture(ctx: Context, b: Bitmap, name: String): Boolean {
+        clearExports(ctx)
         val dir = File(ctx.cacheDir, "exports").apply { mkdirs() }
         val f = File(dir, "$name.png").apply { writeBytes(png(b)) }
         val uri = FileProvider.getUriForFile(ctx, ctx.packageName + ".files", f)
