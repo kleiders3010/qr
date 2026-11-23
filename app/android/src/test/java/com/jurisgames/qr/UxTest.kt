@@ -4,6 +4,7 @@ import com.google.zxing.BarcodeFormat
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -77,9 +78,65 @@ class UxTest {
     }
 
     /** U-Q1 / U-Q4: every screen survives being saved and restored. */
+    /** U-Q11: a made code opened from History goes back into Make with the same fields, so it makes the same code. */
+    @Test fun madeCodesRefillMake() {
+        val made = listOf(
+            "link" to mapOf("url" to "https://jurisgames.com/a?b=c"),
+            "text" to mapOf("text" to "just some words"),
+            "wifi" to mapOf("ssid" to "Casa;1", "password" to "p\\a:ss"),
+            "contact" to mapOf("name" to "Ana Pérez", "phone" to "+34600111222", "email" to "ana@example.com", "org" to "Juris", "web" to "https://example.com", "address" to "Calle 1"),
+            "event" to mapOf("title" to "Cena", "date" to "2026-12-24", "time" to "21:30", "hours" to "2.5", "where" to "Casa", "details" to "traer postre"),
+            "event" to mapOf("title" to "Feriado", "date" to "2026-12-25", "time" to "", "hours" to "", "where" to "", "details" to ""),
+            "phone" to mapOf("number" to "+34600111222"),
+            "sms" to mapOf("number" to "+34600111222", "message" to "hola: ¿vienes?"),
+            "email" to mapOf("to" to "ana@example.com", "subject" to "Hola", "message" to "Una línea"),
+        )
+        // west and east of UTC: an all-day date came back a day early west of it (ZXing reads it as midnight GMT)
+        val home = java.util.TimeZone.getDefault()
+        try {
+            for (tz in listOf("America/Argentina/Buenos_Aires", "Asia/Tokyo", "UTC")) {
+                java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone(tz))
+                for ((kind, fields) in made) for (sec in listOf("WPA", "WEP")) for (hidden in listOf(false, true)) {
+                    if (kind != "wifi" && (sec != "WPA" || hidden)) continue
+                    val code = makeContent(kind, fields, sec, hidden)
+                    assertTrue("$kind makes something", code.isNotEmpty())
+                    val r = Refill.of(code)
+                    assertNotNull("$kind refills", r)
+                    assertEquals(kind, r!!.kind)
+                    assertEquals("$tz $kind $sec $hidden", code, makeContent(r.kind, r.fields, r.security, r.hidden)) // pinned: a refilled Make makes the same code
+                }
+            }
+        } finally {
+            java.util.TimeZone.setDefault(home)
+        }
+        assertNull(Refill.of("geo:40.4,-3.7")) // pinned: Make can't make a map place
+    }
+
+    /** An all-day event shows its own date in any time zone, and a one-day event shows no end. */
+    @Test fun allDayEventsShowTheirDate() {
+        val home = java.util.TimeZone.getDefault()
+        val homeLocale = java.util.Locale.getDefault()
+        try {
+            java.util.Locale.setDefault(java.util.Locale.US)
+            for (tz in listOf("America/Argentina/Buenos_Aires", "Asia/Tokyo", "UTC")) {
+                java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone(tz))
+                val one = Payload.of(makeContent("event", mapOf("title" to "Feriado", "date" to "2026-12-25"), "WPA", false)) as Payload.Event
+                val (s1, e1) = eventWhen(one)
+                assertTrue("$tz: $s1", s1.contains("Dec 25"))
+                assertEquals("$tz one day has no end", "", e1) // pinned: a one-day event shows no end
+                val two = Payload.of("BEGIN:VEVENT\r\nSUMMARY:Viaje\r\nDTSTART;VALUE=DATE:20261224\r\nDTEND;VALUE=DATE:20261227\r\nEND:VEVENT") as Payload.Event
+                val (s2, e2) = eventWhen(two)
+                assertTrue("$tz: $s2 - $e2", s2.contains("Dec 24") && e2.contains("Dec 26"))
+            }
+        } finally {
+            java.util.TimeZone.setDefault(home)
+            java.util.Locale.setDefault(homeLocale)
+        }
+    }
+
     @Test fun screensSurviveSaving() {
         val scope = androidx.compose.runtime.saveable.SaverScope { true }
-        for (s in listOf(Screen.Home, Screen.Make, Screen.History, Screen.Result("WIFI:S:x;;", BarcodeFormat.QR_CODE, true), Screen.Result("123", BarcodeFormat.EAN_13))) {
+        for (s in listOf(Screen.Home, Screen.Make(), Screen.Make("WIFI:S:x;;"), Screen.History, Screen.Result("WIFI:S:x;;", BarcodeFormat.QR_CODE, true, made = true), Screen.Result("123", BarcodeFormat.EAN_13))) {
             val saved = with(ScreenSaver) { scope.save(s) }!!
             assertEquals(s, ScreenSaver.restore(saved))
         }

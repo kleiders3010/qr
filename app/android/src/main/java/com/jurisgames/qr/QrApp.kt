@@ -52,6 +52,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.key
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -112,8 +113,9 @@ const val SOURCE_URL = "https://github.com/kleiders3010/qr"
 
 sealed class Screen {
     object Home : Screen()
-    data class Result(val text: String, val format: BarcodeFormat, val fromHistory: Boolean = false) : Screen()
-    object Make : Screen()
+    data class Result(val text: String, val format: BarcodeFormat, val fromHistory: Boolean = false, val made: Boolean = false) : Screen()
+    /** [from]: a code made earlier, opened again to edit (U-Q11); null starts empty. */
+    data class Make(val from: String? = null) : Screen()
     object History : Screen()
 }
 
@@ -122,16 +124,16 @@ val ScreenSaver = androidx.compose.runtime.saveable.Saver<Screen, List<String>>(
     save = { s ->
         when (s) {
             is Screen.Home -> listOf("home")
-            is Screen.Make -> listOf("make")
+            is Screen.Make -> listOf("make", s.from ?: "")
             is Screen.History -> listOf("history")
-            is Screen.Result -> listOf("result", s.text, s.format.name, s.fromHistory.toString())
+            is Screen.Result -> listOf("result", s.text, s.format.name, s.fromHistory.toString(), s.made.toString())
         }
     },
     restore = { l ->
         when (l.firstOrNull()) {
-            "make" -> Screen.Make
+            "make" -> Screen.Make(l.getOrNull(1)?.ifEmpty { null })
             "history" -> Screen.History
-            "result" -> Screen.Result(l[1], runCatching { BarcodeFormat.valueOf(l[2]) }.getOrDefault(BarcodeFormat.QR_CODE), l[3] == "true")
+            "result" -> Screen.Result(l[1], runCatching { BarcodeFormat.valueOf(l[2]) }.getOrDefault(BarcodeFormat.QR_CODE), l[3] == "true", l.getOrNull(4) == "true")
             else -> Screen.Home
         }
     },
@@ -213,10 +215,11 @@ fun QrApp(env: Env, start: Screen = Screen.Home, startNote: String? = null) {
     ) { pad ->
         Box(Modifier.padding(pad).fillMaxSize()) {
             when (val s = screen) {
-                is Screen.Home -> Home(env, historyVersion, scan, scanPicture, reading, onMake = { screen = Screen.Make }, onOpen = { screen = Screen.Result(it.text, runCatching { BarcodeFormat.valueOf(it.format) }.getOrDefault(BarcodeFormat.QR_CODE), true) }, onHistory = { screen = Screen.History })
-                is Screen.Result -> ResultScreen(s.text, s.format, ::note, onScanAgain = if (s.fromHistory) null else scan)
-                is Screen.Make -> MakeScreen(env, ::note, onMade = { historyVersion++ })
-                is Screen.History -> HistoryScreen(env, historyVersion, onChanged = { historyVersion++ }, onOpen = { screen = Screen.Result(it.text, runCatching { BarcodeFormat.valueOf(it.format) }.getOrDefault(BarcodeFormat.QR_CODE), true) }, note = ::note, undoable = ::undoable, onScan = { screen = Screen.Home; scan() })
+                is Screen.Home -> Home(env, historyVersion, scan, scanPicture, reading, onMake = { screen = Screen.Make() }, onOpen = { screen = Screen.Result(it.text, runCatching { BarcodeFormat.valueOf(it.format) }.getOrDefault(BarcodeFormat.QR_CODE), true, it.made) }, onHistory = { screen = Screen.History })
+                is Screen.Result -> ResultScreen(s.text, s.format, ::note, onScanAgain = if (s.fromHistory) null else scan,
+                    onEdit = if (s.made && Refill.of(s.text) != null) ({ screen = Screen.Make(s.text) }) else null)
+                is Screen.Make -> key(s.from) { MakeScreen(env, ::note, onMade = { historyVersion++ }, from = s.from) }
+                is Screen.History -> HistoryScreen(env, historyVersion, onChanged = { historyVersion++ }, onOpen = { screen = Screen.Result(it.text, runCatching { BarcodeFormat.valueOf(it.format) }.getOrDefault(BarcodeFormat.QR_CODE), true, it.made) }, note = ::note, undoable = ::undoable, onScan = { screen = Screen.Home; scan() })
             }
         }
     }
@@ -295,7 +298,7 @@ private fun EntryRow(e: History.Entry, onOpen: (History.Entry) -> Unit, onDelete
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ResultScreen(text: String, format: BarcodeFormat, note: (String) -> Unit, onScanAgain: (() -> Unit)?) {
+private fun ResultScreen(text: String, format: BarcodeFormat, note: (String) -> Unit, onScanAgain: (() -> Unit)?, onEdit: (() -> Unit)? = null) {
     val ctx = LocalContext.current
     val p = remember(text, format) { Payload.of(text, format) }
     fun failed(ok: Boolean) { if (!ok) note(tr("No app on this phone can do that.")) }
@@ -385,10 +388,10 @@ private fun ResultScreen(text: String, format: BarcodeFormat, note: (String) -> 
                 Button(onClick = { failed(Actions.addContact(ctx, p)) }, modifier = Modifier.testTag("addContact")) { Text(tr("Add to contacts")) }
             }
             is Payload.Event -> {
-                val df = remember { DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT) }
+                val (starts, ends) = remember(p) { eventWhen(p) }
                 line(tr("Event"), p.title)
-                line(tr("Starts"), if (p.startMs > 0) df.format(Date(p.startMs)) else "")
-                line(tr("Ends"), if (p.endMs > p.startMs) df.format(Date(p.endMs)) else "")
+                line(tr("Starts"), starts)
+                line(tr("Ends"), ends)
                 line(tr("Where"), p.location); line(tr("Details"), p.description)
                 linksIn(p.location, p.description)
                 Button(onClick = { failed(Actions.addEvent(ctx, p)) }, modifier = Modifier.testTag("addEvent")) { Text(tr("Add to calendar")) }
@@ -437,6 +440,8 @@ private fun ResultScreen(text: String, format: BarcodeFormat, note: (String) -> 
         // U-Q11: any QR code here, made or scanned, can be shown again as a picture (a guest's Wi-Fi code).
         if (format == BarcodeFormat.QR_CODE && text.toByteArray().size <= Codes.MAX_BYTES)
             OutlinedButton(onClick = { showCode = true }, modifier = Modifier.testTag("showCode")) { Text(tr("Show as a code")) }
+        // U-Q11: a code made here goes back into Make with its fields filled, to change it without typing it all again
+        if (onEdit != null) OutlinedButton(onClick = onEdit, modifier = Modifier.testTag("editMade")) { Text(tr("Edit")) }
         if (onScanAgain != null) Button(onClick = onScanAgain, modifier = Modifier.testTag("scanAgain")) { Text(tr("Scan another")) } // U-Q24
         Text(tr("Read from: {f}", "f" to formatName(format)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
@@ -494,14 +499,15 @@ private val BACKS = listOf(0xFFFFFFFF, 0xFFFFF8E1, 0xFFE8F5E9, 0xFFE3F2FD, 0xFFF
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
-private fun MakeScreen(env: Env, note: (String) -> Unit, onMade: () -> Unit) {
+private fun MakeScreen(env: Env, note: (String) -> Unit, onMade: () -> Unit, from: String? = null) {
+    val refill = remember(from) { from?.let { Refill.of(it) } }
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     // U-Q4: what was typed survives a rotation, a theme change and a trip to another app.
-    var kind by rememberSaveable { mutableStateOf("link") }
-    val f = rememberSaveable(saver = FieldsSaver) { androidx.compose.runtime.mutableStateMapOf<String, String>() }
-    var security by rememberSaveable { mutableStateOf("WPA") }
-    var hidden by rememberSaveable { mutableStateOf(false) }
+    var kind by rememberSaveable { mutableStateOf(refill?.kind ?: "link") }
+    val f = rememberSaveable(saver = FieldsSaver) { androidx.compose.runtime.mutableStateMapOf<String, String>().apply { refill?.let { putAll(it.fields) } } }
+    var security by rememberSaveable { mutableStateOf(refill?.security ?: "WPA") }
+    var hidden by rememberSaveable { mutableStateOf(refill?.hidden ?: false) }
     var fg by rememberSaveable { mutableIntStateOf(SQUARES[0]) }
     var bg by rememberSaveable { mutableIntStateOf(BACKS[0]) }
     var logo by remember { mutableStateOf<Bitmap?>(null) }
@@ -510,17 +516,7 @@ private fun MakeScreen(env: Env, note: (String) -> Unit, onMade: () -> Unit) {
     var pickTime by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     fun v(k: String) = f[k] ?: ""
-    val content: String = when (kind) {
-        "link" -> if (v("url").isBlank()) "" else Content.link(v("url"))
-        "text" -> v("text")
-        "wifi" -> if (v("ssid").isBlank()) "" else Content.wifi(v("ssid"), v("password"), security, hidden)
-        "contact" -> if (v("name").isBlank()) "" else Content.contact(v("name"), v("phone"), v("email"), v("org"), v("web"), v("address"))
-        "event" -> eventContent(v("title"), v("date"), v("time"), v("hours"), v("where"), v("details"))
-        "phone" -> if (v("number").isBlank()) "" else Content.phone(v("number"))
-        "sms" -> if (v("number").isBlank()) "" else Content.sms(v("number"), v("message"))
-        "email" -> if (v("to").isBlank()) "" else Content.email(v("to"), v("subject"), v("message"))
-        else -> ""
-    }
+    val content: String = makeContent(kind, f, security, hidden)
     val bytes = content.toByteArray().size
     val limit = if (logo != null) Codes.MAX_BYTES_H else Codes.MAX_BYTES
     val colorProblem = Codes.colorProblem(fg, bg)
@@ -708,6 +704,38 @@ fun shownTime(t: String): String {
 }
 
 /** An event from typed date/time; "" until the date reads. */
+/**
+ * An event's start and end as shown. All-day dates arrive as midnight GMT (ZXing) and their end is the day after the
+ * last: shown as dates in UTC, the end as the last day and only when it is another day (2026-11-23: west of UTC an
+ * all-day event showed as 9 PM the evening before).
+ */
+fun eventWhen(p: Payload.Event): Pair<String, String> {
+    if (p.startMs <= 0) return "" to ""
+    if (!p.allDay) {
+        val df = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+        return df.format(Date(p.startMs)) to (if (p.endMs > p.startMs) df.format(Date(p.endMs)) else "")
+    }
+    val df = DateFormat.getDateInstance(DateFormat.MEDIUM).apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
+    val last = p.endMs - 86_400_000L
+    return df.format(Date(p.startMs)) to (if (last > p.startMs) df.format(Date(last)) else "")
+}
+
+/** What Make puts in the code for the typed fields ("" while a needed one is empty). */
+fun makeContent(kind: String, f: Map<String, String>, security: String, hidden: Boolean): String {
+    fun v(k: String) = f[k] ?: ""
+    return when (kind) {
+        "link" -> if (v("url").isBlank()) "" else Content.link(v("url"))
+        "text" -> v("text")
+        "wifi" -> if (v("ssid").isBlank()) "" else Content.wifi(v("ssid"), v("password"), security, hidden)
+        "contact" -> if (v("name").isBlank()) "" else Content.contact(v("name"), v("phone"), v("email"), v("org"), v("web"), v("address"))
+        "event" -> eventContent(v("title"), v("date"), v("time"), v("hours"), v("where"), v("details"))
+        "phone" -> if (v("number").isBlank()) "" else Content.phone(v("number"))
+        "sms" -> if (v("number").isBlank()) "" else Content.sms(v("number"), v("message"))
+        "email" -> if (v("to").isBlank()) "" else Content.email(v("to"), v("subject"), v("message"))
+        else -> ""
+    }
+}
+
 fun eventContent(title: String, date: String, time: String, hours: String, where: String, details: String): String {
     if (title.isBlank()) return ""
     val d = Regex("""^\s*(\d{4})-(\d{1,2})-(\d{1,2})\s*$""").find(date) ?: return ""

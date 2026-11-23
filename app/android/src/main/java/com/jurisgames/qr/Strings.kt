@@ -151,6 +151,7 @@ val ES: Map<String, String> = mapOf(
     "Pick “{network}” in the list." to "Elegí “{network}” en la lista.",
     "Search words" to "Búsqueda",
     "Show as a code" to "Mostrar como código",
+    "Edit" to "Editar",
     "Scan another" to "Escanear otro",
     "Open {name}?" to "¿Abrir {name}?",
     "It only looks like {name}." to "Solo se parece a {name}.",

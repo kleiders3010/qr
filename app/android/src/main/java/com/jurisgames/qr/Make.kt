@@ -216,3 +216,34 @@ object Codes {
         return runCatching { MultiFormatReader().decode(BinaryBitmap(HybridBinarizer(src)), hints).text }.getOrNull()
     }
 }
+
+/**
+ * U-Q11: a code made here, opened from History, goes back into Make with its fields filled (the Wi-Fi password
+ * isn't typed again). Only kinds Make can make; anything else (a map place, a product barcode) gives null.
+ */
+data class Refill(val kind: String, val fields: Map<String, String>, val security: String = "WPA", val hidden: Boolean = false) {
+    companion object {
+        fun of(raw: String): Refill? = when (val p = Payload.of(raw)) {
+            is Payload.Link -> Refill("link", mapOf("url" to p.url))
+            is Payload.Text -> Refill("text", mapOf("text" to p.raw))
+            is Payload.Wifi -> Refill("wifi", mapOf("ssid" to p.ssid, "password" to p.password),
+                if (p.security.equals("WEP", true)) "WEP" else "WPA", p.hidden)
+            is Payload.Contact -> Refill("contact", mapOf("name" to p.name, "phone" to (p.phones.firstOrNull() ?: ""),
+                "email" to (p.emails.firstOrNull() ?: ""), "org" to p.org, "web" to p.url, "address" to p.address))
+            is Payload.Event -> {
+                // ZXing reads a date-only start (all day) as midnight GMT; a timed one is an instant shown in local time
+                val zone = if (p.allDay) java.util.TimeZone.getTimeZone("UTC") else java.util.TimeZone.getDefault()
+                val cal = java.util.Calendar.getInstance(zone).apply { timeInMillis = p.startMs }
+                val date = "%04d-%02d-%02d".format(java.util.Locale.ROOT, cal.get(java.util.Calendar.YEAR), cal.get(java.util.Calendar.MONTH) + 1, cal.get(java.util.Calendar.DAY_OF_MONTH))
+                val time = if (p.allDay) "" else "%02d:%02d".format(java.util.Locale.ROOT, cal.get(java.util.Calendar.HOUR_OF_DAY), cal.get(java.util.Calendar.MINUTE))
+                val h = (p.endMs - p.startMs) / 3_600_000.0
+                val hours = if (p.allDay) "" else if (h == Math.floor(h)) h.toLong().toString() else "%.2f".format(java.util.Locale.ROOT, h).trimEnd('0')
+                Refill("event", mapOf("title" to p.title, "date" to date, "time" to time, "hours" to hours, "where" to p.location, "details" to p.description))
+            }
+            is Payload.Phone -> Refill("phone", mapOf("number" to p.number))
+            is Payload.Sms -> Refill("sms", mapOf("number" to p.number, "message" to p.body))
+            is Payload.Email -> Refill("email", mapOf("to" to p.to, "subject" to p.subject, "message" to p.body))
+            else -> null
+        }
+    }
+}
