@@ -277,4 +277,41 @@ class CoreTest {
         val csv = h.csv()
         assertTrue(csv, csv.contains("\"'  =1+1\"") && csv.contains("\"'@SUM(A1)\"") && !csv.contains("\u0001"))
     }
+
+    /** U-Q25: a backup brings the history back exactly; the app's spreadsheet restores too; a strange file can't hurt. */
+    @Test fun historyBackupAndRestore() {
+        fun hist(name: String) = Files.createTempDirectory(name).toFile().let { History(java.io.File(it, "history"), java.io.File(it, "history-setting")) }
+        val t0 = 1_790_000_000_000L
+        val a = hist("qr-a")
+        a.add("WIFI:S:Casa;T:WPA;P:se\tcret;;", "wifi", "QR_CODE", made = true, now = t0)
+        a.add("​=1+1 hidden mark", "text", "QR_CODE", made = false, now = t0 + 1000)
+        a.add("4006381333931", "product", "EAN_13", made = false, now = t0 + 2000)
+        val b = hist("qr-b")
+        b.add("already here", "text", "QR_CODE", made = false, now = t0 - 5000)
+        assertEquals(3, b.restoreFrom(a.backup())) // pinned: three made above
+        assertEquals(a.all(), b.all().filter { it.text != "already here" }) // pinned: a backup restores exactly
+        assertEquals(4, b.all().size) // pinned: three restored + one already here
+        assertEquals(0, b.restoreFrom(a.backup())) // pinned: restoring twice adds nothing
+        // this app's spreadsheet restores as well (to the second; the ' before a formula comes off again)
+        val c = hist("qr-c")
+        c.add("=HYPERLINK(\"x\")", "text", "QR_CODE", made = true, now = t0)
+        val d = hist("qr-d")
+        assertEquals(1, d.restoreFrom(c.csv())) // pinned: one row
+        assertEquals("=HYPERLINK(\"x\")", d.all().single().text) // pinned: round trip
+        assertTrue(d.all().single().made)
+        // not ours, too big, or lying about itself
+        assertNull(d.restoreFrom("just some notes\nnothing else"))
+        assertNull(d.restoreFrom(History.BACKUP_HEAD + "\n" + "x".repeat(History.MAX_IMPORT_CHARS)))
+        val liar = History.BACKUP_HEAD + "\n" + listOf(
+            "${t0}\tm\twifi\tNOT_A_FORMAT\t" + java.util.Base64.getEncoder().encodeToString("https://example.com".toByteArray()),
+            "${Long.MAX_VALUE}\ts\ttext\tQR_CODE\t" + java.util.Base64.getEncoder().encodeToString("from the future".toByteArray()),
+            "${t0}\ts\ttext\tQR_CODE\t" + java.util.Base64.getEncoder().encodeToString("y".repeat(History.MAX_TEXT + 1).toByteArray()),
+            "garbage line",
+        ).joinToString("\n")
+        val e = hist("qr-e")
+        assertEquals(1, e.restoreFrom(liar, now = t0 + 10_000)) // pinned: only the honest-sized, present-time line
+        val kept = e.all().single()
+        assertEquals("link", kept.kind) // pinned: the kind is worked out from the text, not taken from the file
+        assertEquals("QR_CODE", kept.format) // pinned: an unknown format becomes QR
+    }
 }

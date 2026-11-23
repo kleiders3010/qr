@@ -75,7 +75,10 @@ val ES: Map<String, String> = mapOf(
         "Los códigos así cambian ajustes del teléfono: algunos desvían todas tus llamadas a otro número. No lo marques si no sabés qué hace.",
     "The address has characters (? & # = %) that aren't part of a normal address. It is passed on as one odd address, nothing more." to
         "La dirección tiene caracteres (? & # = %) que no son de una dirección normal. Se pasa como una sola dirección rara, nada más.",
-    "The spreadsheet includes Wi-Fi passwords." to "La planilla incluye contraseñas de Wi-Fi.",
+    "The spreadsheet and the backup include Wi-Fi passwords." to "La planilla y la copia de seguridad incluyen contraseñas de Wi-Fi.",
+    "Save a backup" to "Guardar una copia de seguridad", "Restore from a backup" to "Restaurar desde una copia",
+    "Backup saved" to "Copia guardada", "That file isn't a QR history backup." to "Ese archivo no es una copia del historial de QR.",
+    "Restored: {n} added" to "Restaurado: {n} agregados",
     "The name mixes letters from different alphabets. It may be pretending to be another site: don't sign in or pay there." to
         "El nombre mezcla letras de distintos alfabetos. Puede estar haciéndose pasar por otro sitio: no inicies sesión ni pagues ahí.",
     "This is a short link: where it really leads is only shown after opening. Open it only if you trust who made the code." to

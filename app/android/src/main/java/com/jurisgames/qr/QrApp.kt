@@ -102,6 +102,8 @@ class Env(
     val pickPicture: ((Bitmap?) -> Unit) -> Unit,
     /** Asks where to save a file (name, mime type) and writes the bytes; the callback says whether it worked. */
     val saveFile: (String, String, ByteArray, (Boolean) -> Unit) -> Unit,
+    /** Picks a file and reads it as text (U-Q25 restore); the callback gets null when none was picked or it can't be read. */
+    val openText: ((String?) -> Unit) -> Unit = { it(null) },
     /** True after the camera was refused (UX review U-Q6): Home then says so, with a way to fix it. */
     val cameraRefused: androidx.compose.runtime.State<Boolean> = mutableStateOf(false),
     /** Asks for the camera again, or opens this app's page in the phone's settings once Android no longer asks. */
@@ -785,6 +787,7 @@ private fun ToggleRow(label: String, on: Boolean, tag: String, checkbox: Boolean
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun HistoryScreen(env: Env, version: Int, onChanged: () -> Unit, onOpen: (History.Entry) -> Unit, note: (String) -> Unit,
                           undoable: (String, () -> Unit) -> Unit, onScan: () -> Unit) {
@@ -806,8 +809,22 @@ private fun HistoryScreen(env: Env, version: Int, onChanged: () -> Unit, onOpen:
             }, modifier = Modifier.testTag("exportCsv")) { Text(tr("Save as a spreadsheet")) }
             TextButton(enabled = env.history.all().isNotEmpty(), onClick = { confirmClear = true }, modifier = Modifier.testTag("clear")) { Text(tr("Clear all")) }
         }
-        // Safety round 6 Q4: the spreadsheet holds each code's full text, Wi-Fi passwords included.
-        if (list.any { it.kind == "wifi" }) Text(tr("The spreadsheet includes Wi-Fi passwords."), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // U-Q25: a backup file this app reads back (the phone's own backup stays off: the history holds Wi-Fi passwords)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(enabled = env.history.all().isNotEmpty(), onClick = {
+                env.saveFile("qr-history-backup.txt", "text/plain", env.history.backup().toByteArray()) { ok -> note(if (ok) tr("Backup saved") else tr("Couldn't save it")) }
+            }, modifier = Modifier.testTag("backup")) { Text(tr("Save a backup")) }
+            OutlinedButton(onClick = {
+                env.openText { text ->
+                    if (text == null) return@openText
+                    val n = env.history.restoreFrom(text)
+                    note(if (n == null) tr("That file isn't a QR history backup.") else tr("Restored: {n} added", "n" to n))
+                    onChanged()
+                }
+            }, modifier = Modifier.testTag("restore")) { Text(tr("Restore from a backup")) }
+        }
+        // Safety round 6 Q4: the spreadsheet and the backup hold each code's full text, Wi-Fi passwords included.
+        if (env.history.all().any { it.kind == "wifi" }) Text(tr("The spreadsheet and the backup include Wi-Fi passwords."), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (list.isEmpty() && q.isBlank()) Column(Modifier.padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             // U-Q20: the empty list says what fills it and offers the way to start
             Text(tr("Codes you scan or make show up here."))

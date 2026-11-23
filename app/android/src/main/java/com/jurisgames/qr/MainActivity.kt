@@ -62,6 +62,25 @@ class MainActivity : ComponentActivity() {
         val cb = onPicture
         if (uri == null) cb?.invoke(null) else thread(name = "picked-picture") { val b = load(uri); runOnUiThread { if (!isDestroyed) cb?.invoke(b) } }
     }
+    // U-Q25: a backup to restore, read off the main thread and never more than the history could hold (8 MB)
+    private var onText: ((String?) -> Unit)? = null
+    private val opener = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val cb = onText
+        onText = null
+        if (uri == null) { cb?.invoke(null); return@registerForActivityResult }
+        thread(name = "restore-file") {
+            val text = runCatching {
+                contentResolver.openInputStream(uri)?.use { s ->
+                    // readNBytes is Android 13+; this app runs from Android 8
+                    val out = java.io.ByteArrayOutputStream()
+                    val buf = ByteArray(64 * 1024)
+                    while (out.size() <= History.MAX_IMPORT_CHARS) { val n = s.read(buf); if (n < 0) break; out.write(buf, 0, n) }
+                    if (out.size() > History.MAX_IMPORT_CHARS) "" else out.toString("UTF-8")
+                }
+            }.getOrNull()
+            runOnUiThread { if (!isDestroyed) cb?.invoke(text) }
+        }
+    }
     private val saver = registerForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
         val (bytes, done) = pendingSave ?: return@registerForActivityResult
         pendingSave = null
@@ -85,6 +104,7 @@ class MainActivity : ComponentActivity() {
             scan = { cb -> onScanned = cb; scanner.launch(Intent(this, ScanActivity::class.java)) },
             pickPicture = { cb -> onPicture = cb; picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
             saveFile = { name, _, bytes, done -> pendingSave = bytes to done; saver.launch(name) },
+            openText = { cb -> onText = cb; opener.launch(arrayOf("text/plain", "text/csv", "text/comma-separated-values", "application/octet-stream")) },
             cameraRefused = cameraRefused,
             allowCamera = ::allowCamera,
         )
